@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Satisfactory Helper</title>
+  <meta name="description" content="Production calculator and quick reference for Satisfactory 1.x — built for playing on console with a phone or tablet beside you.">
+  <meta name="theme-color" content="#16181d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f39c12'/%3E%3Cpath d='M16 6l9 5v10l-9 5-9-5V11z' fill='none' stroke='%2316181d' stroke-width='2.5'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand"><span class="logo" aria-hidden="true"></span>Satisfactory Helper</h1>
+    <div class="topbar-controls">
+      <label class="tier-pick">
+        <span>Tier</span>
+        <select id="tier-select" aria-label="Highest tier you have reached"></select>
+      </label>
+      <button type="button" id="open-settings" class="btn">Alt recipes <span id="alt-count" class="pill">0</span></button>
+      <button type="button" id="theme-toggle" class="btn icon-btn" aria-label="Toggle light or dark theme">◐</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="calc" aria-selected="true">Calculator</button>
+    <button role="tab" data-tab="milestones">Milestones</button>
+    <button role="tab" data-tab="machines">Machines &amp; power</button>
+    <button role="tab" data-tab="alts">Best alts</button>
+    <button role="tab" data-tab="tips">PS5 tips</button>
+  </nav>
+
+  <main>
+    <section id="tab-calc" class="panel" role="tabpanel">
+      <div class="calc-layout">
+        <div class="card targets-card">
+          <h2>What do you want to make?</h2>
+          <div id="targets"></div>
+          <div class="target-actions">
+            <button type="button" id="add-target" class="btn">+ Add item</button>
+            <button type="button" id="clear-targets" class="btn ghost">Clear</button>
+          </div>
+          <p class="hint">Rates are per minute. Only recipes up to your tier are used. Tick the alternates you own under <em>Alt recipes</em>.</p>
+        </div>
+        <div class="results">
+          <div id="summary" class="summary"></div>
+          <div class="view-toggle" role="group" aria-label="Result view">
+            <button type="button" data-view="list" aria-pressed="true">Build list</button>
+            <button type="button" data-view="tree" aria-pressed="false">Tree</button>
+          </div>
+          <div id="result-view"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-milestones" class="panel" role="tabpanel" hidden></section>
+    <section id="tab-machines" class="panel" role="tabpanel" hidden></section>
+    <section id="tab-alts" class="panel" role="tabpanel" hidden></section>
+    <section id="tab-tips" class="panel" role="tabpanel" hidden></section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog" class="dialog-inner">
+      <header class="dialog-head">
+        <h2>Alternate recipes you've unlocked</h2>
+        <button class="btn icon-btn" value="close" aria-label="Close">✕</button>
+      </header>
+      <input type="search" id="alt-search" placeholder="Search alternates or products…" autocomplete="off">
+      <label class="check-row"><input type="checkbox" id="alt-hide-locked" checked> Only show alts up to my tier</label>
+      <div id="alt-list" class="alt-list"></div>
+      <details class="transfer">
+        <summary>Move settings to another device</summary>
+        <p class="hint">Copy this text on one device and paste it on the other, then press Import.</p>
+        <textarea id="transfer-text" rows="4" spellcheck="false"></textarea>
+        <div class="target-actions">
+          <button type="button" id="export-btn" class="btn">Copy settings</button>
+          <button type="button" id="import-btn" class="btn">Import</button>
+        </div>
+        <p id="transfer-msg" class="hint" role="status"></p>
+      </details>
+    </form>
+  </dialog>
+
+  <footer class="footer">
+    <span id="data-version"></span> · Game data may lag behind the latest patch. Fan-made, not affiliated with Coffee Stain Studios.
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
