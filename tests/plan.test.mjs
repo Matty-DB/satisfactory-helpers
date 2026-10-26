@@ -64,7 +64,31 @@ test('byproducts go to a sink lane', () => {
   assert.equal(plan.parts.oilExtractors, 1);
 });
 
-test('more than 8 machines split into several rows', () => {
+test('more than 8 machines split into several rows, with the feed divided between them', () => {
   const plan = layoutPlan(DATA, solve(index, [{ item: 'Desc_IronPlate_C', rate: 400 }]));
   assert.deepEqual(plan.rows.filter((r) => r.item === 'Desc_IronPlate_C').map((r) => r.count), [8, 8, 4]);
+  // 20 constructors and 20 smelters, each as rows of 8+8+4: 7+7+3 splitters along the rows,
+  // plus 2 to divide each feed between its three rows → 19 per step, 38 total.
+  assert.equal(plan.parts.splitters, 38);
+});
+
+test('semi-auto biofuel: two Biomass rows merge into Solid Biofuel, burners scale', async () => {
+  const { BUILDS } = await import('../js/ref-content.js');
+  const { buildInputs } = await import('../js/builds.js');
+  const b = BUILDS.flatMap((s) => s.builds).find((x) => x.id === 'biofuel-semi');
+  for (const [n, splitters] of [[8, 7], [15, 14]]) {
+    const { targets, opts, power } = buildInputs(DATA, b, n);
+    assert.equal(power.count, n);
+    assert.equal(targets[0].rate, 4 * n); // 4 Solid Biofuel/min per burner
+    const res = solve(index, targets, opts);
+    const plan = layoutPlan(DATA, res, powerPlan(DATA, power.genId, power.fuelId, power.count));
+    const sb = plan.rows.find((r) => r.item === 'Desc_Biofuel_C');
+    assert.equal(sb.count, 1, 'one Solid Biofuel constructor up to 15 burners');
+    assert.ok(sb.inputs[0].from.merged, 'leaf and wood Biomass rows merge');
+    assert.deepEqual(sb.outputs[0].to.map((t) => t.kind), ['gen']);
+    // two hand-filled containers (leaves, wood); one merger joining the Biomass belts
+    assert.equal(plan.parts.containers, 2);
+    assert.equal(plan.parts.mergers, 1);
+    assert.equal(plan.parts.splitters, splitters);
+  }
 });

@@ -6,19 +6,30 @@ export function graphOf(res) {
   const cut = new Set(res.cycles.map((c) => `${c.item}>${c.ingredient}`));
   const nodes = new Map();
   const edges = [];
-  for (const n of res.nodes) nodes.set(n.item, { id: n.item, kind: 'step', node: n });
-  for (const [id, rate] of Object.entries(res.raw)) nodes.set(id, { id, kind: 'raw', rate });
-  for (const [id, rate] of Object.entries(res.unavailable)) nodes.set(id, { id, kind: 'missing', rate });
-  for (const [id, rate] of Object.entries(res.loopInputs)) {
-    if (!nodes.has(id)) nodes.set(id, { id, kind: 'loop', rate });
+  const keyOf = (n) => n.key ?? n.item;
+  const producers = {};
+  for (const n of res.nodes) {
+    nodes.set(keyOf(n), { id: keyOf(n), item: n.item, kind: 'step', node: n });
+    (producers[n.item] ||= []).push(n);
   }
+  for (const [id, rate] of Object.entries(res.raw)) nodes.set(id, { id, item: id, kind: 'raw', rate });
+  for (const [id, rate] of Object.entries(res.hand || {})) nodes.set(id, { id, item: id, kind: 'hand', rate });
+  for (const [id, rate] of Object.entries(res.unavailable)) nodes.set(id, { id, item: id, kind: 'missing', rate });
   for (const n of res.nodes) {
     for (const [ing, rate] of n.inputs) {
       if (rate <= 1e-9) continue;
-      const from = cut.has(`${n.item}>${ing}`) ? `loop:${ing}` : ing;
-      if (from.startsWith('loop:') && !nodes.has(from)) nodes.set(from, { id: from, item: ing, kind: 'loop', rate: 0 });
-      if (from.startsWith('loop:')) nodes.get(from).rate += rate;
-      edges.push({ from, to: n.item, item: ing, rate, loop: from.startsWith('loop:') });
+      if (cut.has(`${n.item}>${ing}`)) {
+        const from = `loop:${ing}`;
+        if (!nodes.has(from)) nodes.set(from, { id: from, item: ing, kind: 'loop', rate: 0 });
+        nodes.get(from).rate += rate;
+        edges.push({ from, to: keyOf(n), item: ing, rate, loop: true });
+        continue;
+      }
+      const ps = producers[ing];
+      if (!ps) { edges.push({ from: ing, to: keyOf(n), item: ing, rate }); continue; }
+      // A split item feeds its consumers from every producer, in proportion to what each makes.
+      const total = ps.reduce((t, p) => t + p.rate, 0);
+      for (const p of ps) edges.push({ from: keyOf(p), to: keyOf(n), item: ing, rate: (rate * p.rate) / total });
     }
   }
   // Level = longest path from a source, so every edge points to a higher level.
@@ -152,10 +163,11 @@ export function renderFlow(res, ctx) {
       <text x="${mx}" y="${my + 4}">${esc(label)}</text></g>`;
   }).join('');
   const boxSvg = L.boxes.map((b) => {
-    const name = b.kind === 'loop' ? itemName(b.item || b.id) : itemName(b.id);
+    const split = b.kind === 'step' && b.node.key && b.node.key !== b.node.item;
+    const name = split ? b.node.recipe.n : itemName(b.item || b.id);
     const sub = b.kind === 'step'
       ? `${fmt(b.node.machines)}× ${machineName(b.node.recipe.m)}`
-      : b.kind === 'raw' ? 'raw resource' : b.kind === 'loop' ? 'loop input' : 'not craftable yet';
+      : b.kind === 'raw' ? 'raw resource' : b.kind === 'hand' ? 'craft by hand' : b.kind === 'loop' ? 'loop input' : 'not craftable yet';
     const rate = b.kind === 'step' ? b.node.rate : b.rate;
     const unitTxt = isFluid(b.item || b.id) ? 'm³/min' : '/min';
     return `<g class="box ${b.kind}" transform="translate(${b.x},${b.y})">

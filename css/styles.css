@@ -296,3 +296,5 @@ dialog::backdrop { background: rgb(0 0 0 / .55); }
 .plan .row-sub { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
 .plan .lane-label { fill: var(--text); font-size: 11px; }
 .plan .lane-label.on-source { font-size: 10.5px; }
+.build .scale { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; margin-bottom: .4rem; }
+.build .scale input { width: 6rem; }

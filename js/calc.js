@@ -32,11 +32,22 @@ export function recipeOptions(index, item, opts) {
     .map(({ r }) => r);
 }
 
-export function chosenRecipe(index, item, opts) {
-  if (index.data.items[item]?.raw) return null;
+// choice[item] is a recipe id, or [{ id, share }] to split an item between recipes.
+export function chosenMix(index, item, opts) {
+  if (index.data.items[item]?.raw) return [];
   const options = recipeOptions(index, item, opts);
   const picked = opts.choice?.[item];
-  return options.find((r) => r.id === picked) || options[0] || null;
+  if (Array.isArray(picked)) {
+    const mix = picked.map(({ id, share }) => ({ r: options.find((o) => o.id === id), share })).filter((m) => m.r && m.share > 0);
+    const total = mix.reduce((t, m) => t + m.share, 0);
+    if (mix.length) return mix.map((m) => ({ r: m.r, share: m.share / total }));
+  }
+  const r = options.find((o) => o.id === picked) || options[0];
+  return r ? [{ r, share: 1 }] : [];
+}
+
+export function chosenRecipe(index, item, opts) {
+  return chosenMix(index, item, opts)[0]?.r ?? null;
 }
 
 export const perMin = (r, amount) => (amount * 60) / r.t;
@@ -50,7 +61,7 @@ export function beltFor(rate, fluid) {
 
 /**
  * targets: [{ item, rate }] (rate per minute)
- * opts: { maxTier, alts: Set<recipeId>, choice: { [itemId]: recipeId } }
+ * opts: { maxTier, alts: Set<recipeId>, choice: { [itemId]: recipeId | [{ id, share }] } }
  */
 export function solve(index, targets, opts = {}) {
   const items = index.data.items;
@@ -64,13 +75,13 @@ export function solve(index, targets, opts = {}) {
   function visit(item) {
     if (state[item] === 'done') return;
     state[item] = 'open';
-    const r = chosenRecipe(index, item, opts);
-    recipeOf[item] = r;
-    if (r) {
+    const mix = chosenMix(index, item, opts);
+    recipeOf[item] = mix;
+    for (const { r } of mix) {
       for (const [ing] of r.in) {
         if (state[ing] === 'open') {
+          if (!cutEdges.has(`${item}>${ing}`)) cycles.push({ item, ingredient: ing });
           cutEdges.add(`${item}>${ing}`);
-          cycles.push({ item, ingredient: ing });
         } else visit(ing);
       }
     }
@@ -92,28 +103,33 @@ export function solve(index, targets, opts = {}) {
   let power = 0;
 
   for (const item of order) {
-    const rate = demand[item] || 0;
-    if (rate <= 1e-9) continue;
-    const r = recipeOf[item];
-    if (!r) {
-      (items[item]?.raw ? raw : items[item]?.hand ? hand : unavailable)[item] = rate;
+    const total = demand[item] || 0;
+    if (total <= 1e-9) continue;
+    const mix = recipeOf[item];
+    if (!mix.length) {
+      (items[item]?.raw ? raw : items[item]?.hand ? hand : unavailable)[item] = total;
       continue;
     }
-    const machines = rate / perMin(r, outAmount(r, item));
-    const mw = r.pw ?? index.data.machines[r.m]?.mw ?? 0;
-    const inputs = r.in.map(([ing, amt]) => {
-      const need = machines * perMin(r, amt);
-      if (cutEdges.has(`${item}>${ing}`)) loopInputs[ing] = (loopInputs[ing] || 0) + need;
-      else demand[ing] = (demand[ing] || 0) + need;
-      return [ing, need];
-    });
-    const outputs = r.out.map(([p, amt]) => {
-      const made = machines * perMin(r, amt);
-      if (p !== item) byproducts[p] = (byproducts[p] || 0) + made;
-      return [p, made];
-    });
-    power += machines * mw;
-    nodes.push({ item, recipe: r, rate, machines, power: machines * mw, inputs, outputs });
+    for (const { r, share } of mix) {
+      const rate = total * share;
+      // Split items get one node per recipe, told apart by key.
+      const key = mix.length > 1 ? `${item}@${r.id}` : item;
+      const machines = rate / perMin(r, outAmount(r, item));
+      const mw = r.pw ?? index.data.machines[r.m]?.mw ?? 0;
+      const inputs = r.in.map(([ing, amt]) => {
+        const need = machines * perMin(r, amt);
+        if (cutEdges.has(`${item}>${ing}`)) loopInputs[ing] = (loopInputs[ing] || 0) + need;
+        else demand[ing] = (demand[ing] || 0) + need;
+        return [ing, need];
+      });
+      const outputs = r.out.map(([p, amt]) => {
+        const made = machines * perMin(r, amt);
+        if (p !== item) byproducts[p] = (byproducts[p] || 0) + made;
+        return [p, made];
+      });
+      power += machines * mw;
+      nodes.push({ item, key, share, recipe: r, rate, machines, power: machines * mw, inputs, outputs });
+    }
   }
 
   let maxSolid = 0, maxFluid = 0;
@@ -130,11 +146,16 @@ export function solve(index, targets, opts = {}) {
 }
 
 // Proportional tree for display: each branch shows its share of the chain.
-export function buildTree(index, item, rate, opts, path = new Set(), depth = 0) {
-  const r = chosenRecipe(index, item, opts);
-  const node = { item, rate, recipe: r, children: [] };
-  if (!r) return node;
-  if (path.has(item) || depth > 40) return { ...node, cycle: true, recipe: null };
+// A split item becomes a node whose children are one branch per recipe.
+export function buildTree(index, item, rate, opts, path = new Set(), depth = 0, forced = null) {
+  const mix = forced ? [{ r: forced, share: 1 }] : chosenMix(index, item, opts);
+  if (!mix.length) return { item, rate, recipe: null, children: [] };
+  if (path.has(item) || depth > 40) return { item, rate, recipe: null, cycle: true, children: [] };
+  if (mix.length > 1) {
+    return { item, rate, recipe: null, split: true, children: mix.map(({ r, share }) => buildTree(index, item, rate * share, opts, path, depth, r)) };
+  }
+  const r = mix[0].r;
+  const node = { item, rate, recipe: r, via: forced ? r.n : null, children: [] };
   const machines = rate / perMin(r, outAmount(r, item));
   node.machines = machines;
   const next = new Set(path).add(item);

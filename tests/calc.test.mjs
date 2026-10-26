@@ -85,3 +85,24 @@ test('Turbofuel without its recipe is unavailable, not an unpackaging loop', () 
   assert.equal(res.cycles.length, 0);
   assert.ok(res.unavailable.Desc_LiquidTurboFuel_C);
 });
+
+test('split an item between two recipes', () => {
+  // 32 Solid Biofuel: 8 Biomass → 4 SB per 4 s, so 64 Biomass/min and 0.533 constructors.
+  // Half the Biomass (32) from leaves: 10 → 5 per 5 s (60/min per machine) → 0.533 machines, 64 leaves.
+  // Half from wood: 4 → 20 per 4 s (300/min per machine) → 0.1067 machines, 6.4 wood.
+  const leaves = DATA.recipes.find((r) => r.n === 'Biomass (Leaves)').id;
+  const wood = DATA.recipes.find((r) => r.n === 'Biomass (Wood)').id;
+  const res = solve(index, [{ item: 'Desc_Biofuel_C', rate: 32 }], {
+    choice: { Desc_GenericBiomass_C: [{ id: leaves, share: 1 }, { id: wood, share: 1 }] },
+  });
+  const bio = res.nodes.filter((n) => n.item === 'Desc_GenericBiomass_C');
+  assert.equal(bio.length, 2);
+  near(bio.find((n) => n.recipe.id === leaves).machines, 32 / 60, 'leaf constructors');
+  near(bio.find((n) => n.recipe.id === wood).machines, 32 / 300, 'wood constructors');
+  near(res.raw.Desc_Leaves_C, 64, 'leaves');
+  near(res.raw.Desc_Wood_C, 6.4, 'wood');
+  near(node(res, 'Desc_Biofuel_C').machines, 32 / 60, 'biofuel constructors');
+  const tree = buildTree(index, 'Desc_Biofuel_C', 32, { choice: { Desc_GenericBiomass_C: [{ id: leaves, share: 1 }, { id: wood, share: 1 }] } });
+  assert.ok(tree.children[0].split);
+  assert.equal(tree.children[0].children.length, 2);
+});

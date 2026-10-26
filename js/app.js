@@ -229,14 +229,15 @@ function renderBuildList(res, o, targetSet) {
     const built = Math.ceil(n.machines - 1e-9);
     const clock = (n.machines / built) * 100;
     const options = recipeOptions(index, n.item, o);
-    const select = options.length > 1
+    const split = n.key && n.key !== n.item; // one item made by several recipes; set by builds
+    const select = options.length > 1 && !split
       ? `<select data-choice="${n.item}" aria-label="Recipe for ${esc(itemName(n.item))}">${options.map((x) =>
           `<option value="${x.id}"${x.id === r.id ? ' selected' : ''}>${x.alt ? 'Alt: ' : ''}${esc(x.n)} — ${esc(machineName(x.m))}</option>`).join('')}</select>`
       : '';
     const io = (pairs) => pairs.map(([id, rate]) => `<li><span class="${isFluid(id) ? 'fluid' : ''}">${esc(itemName(id))}</span><span class="num">${fmt(rate)}</span></li>`).join('');
     return `<article class="step">
       <div class="step-head">
-        <h3>${esc(itemName(n.item))} ${targetSet.has(n.item) ? '<span class="tag">TARGET</span>' : ''}</h3>
+        <h3>${esc(split ? r.n : itemName(n.item))} ${targetSet.has(n.item) ? '<span class="tag">TARGET</span>' : ''}</h3>
         <span class="machines">${fmt(n.machines)} × ${esc(machineName(r.m))}</span>
       </div>
       <div class="step-io">
@@ -262,8 +263,12 @@ function treeNode(node, depth) {
   const name = `<span class="${isFluid(node.item) ? 'fluid' : ''}">${esc(itemName(node.item))}</span>`;
   const rate = `<span class="rate">${fmt(node.rate)} ${unit(node.item)}</span>`;
   if (node.cycle) return `<li class="leaf">${name} ${rate} <span class="tag">LOOP</span></li>`;
+  if (node.split) {
+    return `<li><details${depth < 2 ? ' open' : ''}><summary>${name} ${rate} <span class="tag">SPLIT</span></summary>
+      <ul>${node.children.map((c) => treeNode(c, depth + 1)).join('')}</ul></details></li>`;
+  }
   if (!node.recipe) return `<li class="leaf">${name} ${rate}${DATA.items[node.item]?.raw ? '' : ' <span class="tag">N/A</span>'}</li>`;
-  return `<li><details${depth < 2 ? ' open' : ''}><summary>${name} ${rate} <span class="mach">${fmt(node.machines)}× ${esc(machineName(node.recipe.m))}</span></summary>
+  return `<li><details${depth < 2 ? ' open' : ''}><summary>${name}${node.via ? ` <small class="hint">via ${esc(node.via)}</small>` : ''} ${rate} <span class="mach">${fmt(node.machines)}× ${esc(machineName(node.recipe.m))}</span></summary>
     <ul>${node.children.map((c) => treeNode(c, depth + 1)).join('')}</ul></details></li>`;
 }
 
@@ -444,8 +449,11 @@ function renderPlanner() {
   $('#planner-fuel').innerHTML = gen.fuels.map(([f, mj]) => `<option value="${f}"${f === planner.fuel ? ' selected' : ''}>${esc(itemName(f))} (${mj.toLocaleString()} MJ)</option>`).join('');
 }
 
+const buildScale = {}; // build id → chosen unit count (e.g. burners), per visit
+
 function buildCard(b) {
-  const { targets, opts: bo, power } = buildInputs(DATA, b);
+  const units = buildScale[b.id] ?? b.scale?.value;
+  const { targets, opts: bo, power } = buildInputs(DATA, b, units);
   const parts = [];
   if (power) parts.push(powerSummary(powerPlan(DATA, power.genId, power.fuelId, power.count)));
   if (targets.length) {
@@ -467,6 +475,8 @@ function buildCard(b) {
   return `<article class="card build" id="build-${b.id}">
     <h3>${esc(b.title)}${locked}</h3>
     <p>${esc(b.goal)}</p>
+    ${b.scale ? `<label class="scale">${esc(b.scale.label)}
+      <input type="number" class="num" data-build-scale="${b.id}" min="${b.scale.min}" max="${b.scale.max}" step="1" value="${units}"></label>` : ''}
     ${parts.join('')}
     ${altNote}
     <ul class="tips-list">${b.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
@@ -512,6 +522,20 @@ $('#tab-builds').addEventListener('change', (e) => {
 });
 $('#tab-builds').addEventListener('input', (e) => {
   if (e.target.id === 'planner-count') { planner.count = Math.max(1, Math.round(Number(e.target.value) || 1)); renderPlanner(); }
+  const id = e.target.dataset.buildScale;
+  if (id) {
+    const b = BUILDS.flatMap((st) => st.builds).find((x) => x.id === id);
+    const n = Math.round(Number(e.target.value));
+    if (!(n >= b.scale.min && n <= b.scale.max)) return; // wait until the number is valid
+    buildScale[id] = n;
+    const card = $(`#build-${id}`);
+    const planOpen = !card.querySelector('.build-plan').hidden;
+    card.outerHTML = buildCard(b);
+    const fresh = $(`#build-${id}`);
+    const input = fresh.querySelector('[data-build-scale]');
+    input.focus();
+    if (planOpen) fresh.querySelector('[data-build-plan]').click();
+  }
 });
 $('#tab-builds').addEventListener('click', (e) => {
   const planBtn = e.target.closest('[data-build-plan]');
@@ -519,7 +543,8 @@ $('#tab-builds').addEventListener('click', (e) => {
     const box = planBtn.closest('.build').querySelector('.build-plan');
     const show = box.hidden;
     if (show && !box.innerHTML) {
-      const { targets, opts: bo, power } = buildInputs(DATA, BUILDS.flatMap((st) => st.builds).find((x) => x.id === planBtn.dataset.buildPlan));
+      const id = planBtn.dataset.buildPlan;
+      const { targets, opts: bo, power } = buildInputs(DATA, BUILDS.flatMap((st) => st.builds).find((x) => x.id === id), buildScale[id]);
       const res = solve(index, targets, bo);
       const p = power ? powerPlan(DATA, power.genId, power.fuelId, power.count) : null;
       box.innerHTML = renderPlan(DATA, res, p, { itemName, machineName, isFluid, beltFor });
@@ -533,7 +558,7 @@ $('#tab-builds').addEventListener('click', (e) => {
   const powerBtn = e.target.closest('[data-build-power]');
   const find = (id) => BUILDS.flatMap((s) => s.builds).find((b) => b.id === id);
   if (calcBtn) {
-    const { targets, opts: bo } = buildInputs(DATA, find(calcBtn.dataset.buildCalc));
+    const { targets, opts: bo } = buildInputs(DATA, find(calcBtn.dataset.buildCalc), buildScale[calcBtn.dataset.buildCalc]);
     state.targets = targets;
     Object.assign(state.choice, bo.choice);
     save();
@@ -542,7 +567,7 @@ $('#tab-builds').addEventListener('click', (e) => {
     showTab('calc');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } else if (powerBtn) {
-    const { power } = buildInputs(DATA, find(powerBtn.dataset.buildPower));
+    const { power } = buildInputs(DATA, find(powerBtn.dataset.buildPower), buildScale[powerBtn.dataset.buildPower]);
     planner.gen = power.genId;
     planner.fuel = power.fuelId;
     planner.count = power.count;

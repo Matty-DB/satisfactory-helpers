@@ -23,6 +23,7 @@ export const FOOTPRINT = {
   Desc_GeneratorNuclear_C: [36, 43],
 };
 export const MAX_PER_ROW = 8;
+export const MAX_GENERATORS_PER_ROW = 16; // one long manifold you can keep extending
 const GAP = 2; // walkway between machines, room for a splitter
 const LANE_LINK = 10; // metres of belt allowed for each link between rows or to a source
 
@@ -76,17 +77,24 @@ export function layoutPlan(data, res, power = null) {
     return s;
   };
 
-  const fuelFromRows = power && res.nodes.some((n) => n.item === power.fuelId);
-  // What leaves the factory: total demand minus what other rows (and generators) consume.
-  const leaving = (item) => {
-    const used = edges.filter((e) => e.from === item).reduce((t, e) => t + e.rate, 0);
-    const burned = power && item === power.fuelId ? power.fuelTotal : 0;
-    return (res.demand[item] || 0) - used - burned;
+  const keyOf = (n) => n.key ?? n.item;
+  // Split items (one item, several recipes) are labelled by recipe so their rows can be told apart.
+  const label = (key) => {
+    const g = gnodes.get(key);
+    return g.kind === 'step' && keyOf(g.node) !== g.node.item ? g.node.recipe.n : data.items[g.item]?.n ?? g.item;
+  };
+  const fuelRows = power ? res.nodes.filter((n) => n.item === power.fuelId) : [];
+  // What leaves the factory from one row: what it makes minus what other rows and the generators take.
+  const leaving = (n) => {
+    const used = edges.filter((e) => e.from === keyOf(n)).reduce((t, e) => t + e.rate, 0);
+    const burned = power && n.item === power.fuelId ? (power.fuelTotal * n.rate) / res.demand[n.item] : 0;
+    return n.rate - used - burned;
   };
   const rows = [];
 
-  const steps = res.nodes.map((n) => ({ n, level: gnodes.get(n.item).level })).sort((a, b) => a.level - b.level);
+  const steps = res.nodes.map((n) => ({ n, level: gnodes.get(keyOf(n)).level })).sort((a, b) => a.level - b.level);
   for (const { n } of steps) {
+    const key = keyOf(n);
     const total = Math.ceil(n.machines - 1e-9);
     const clock = (n.machines / total) * 100;
     const [w, d] = FOOTPRINT[n.recipe.m] || [10, 10];
@@ -96,34 +104,38 @@ export function layoutPlan(data, res, power = null) {
       const share = count / total;
       const width = count * (w + GAP) + GAP;
       const inputs = n.inputs.filter(([, r]) => r > 1e-9).map(([item, rate]) => {
-        const e = edges.find((x) => x.to === n.item && x.item === item);
-        const fromNode = gnodes.get(e.from);
+        const es = edges.filter((x) => x.to === key && x.item === item);
+        const fromNode = gnodes.get(es[0].from);
         let from;
-        if (fromNode.kind === 'step') from = { kind: 'row', item: e.from };
-        else if (fromNode.kind === 'raw') from = { kind: 'source', source: addSource(item, rate * share) };
-        else from = { kind: 'loop' };
+        if (fromNode.kind === 'step') {
+          from = { kind: 'row', label: es.map((x) => label(x.from)).join(' + '), merged: es.length > 1 };
+          parts.mergers += es.length - 1; // belts from several rows join before this one
+        } else if (fromNode.kind === 'loop') from = { kind: 'loop' };
+        else from = { kind: 'source', source: addSource(item, rate * share) };
         addConnectors(item, count - 1, 'splitters');
+        if (c === 0) addConnectors(item, chunks - 1, 'splitters'); // divide the feed between rows
         addLength(item, rate * share, width);
         return { item, rate: rate * share, fluid: isFluid(item), from };
       });
       const outputs = n.outputs.filter(([, r]) => r > 1e-9).map(([item, rate]) => {
         const lane = { item, rate: rate * share, fluid: isFluid(item), to: [] };
         if (item === n.item) {
-          for (const e of edges.filter((x) => x.from === item)) lane.to.push({ kind: 'row', item: e.to, rate: e.rate * share });
-          if (power && item === power.fuelId) lane.to.push({ kind: 'gen', rate: power.fuelTotal * share });
-          const left = leaving(item);
+          for (const e of edges.filter((x) => x.from === key)) lane.to.push({ kind: 'row', label: label(e.to), rate: e.rate * share });
+          if (power && item === power.fuelId) lane.to.push({ kind: 'gen', rate: ((power.fuelTotal * n.rate) / res.demand[item]) * share });
+          const left = leaving(n);
           if (left > 1e-6) { lane.to.push({ kind: 'storage', rate: left * share }); parts.containers += 1; }
         } else {
           lane.to.push({ kind: 'sink' });
           parts.sinks += 1;
         }
         addConnectors(item, count - 1, 'mergers');
+        if (c === 0) addConnectors(item, chunks - 1, 'mergers'); // join the rows' outputs
         addConnectors(item, lane.to.length - 1, 'splitters');
         addLength(item, rate * share, width + LANE_LINK * lane.to.length);
         return lane;
       });
       rows.push({
-        kind: 'step', item: n.item, recipe: n.recipe, machine: n.recipe.m, count, clock, w, d, width,
+        kind: 'step', item: n.item, title: label(key), recipe: n.recipe, machine: n.recipe.m, count, clock, w, d, width,
         part: c, parts: chunks, inputs, outputs,
         fx: Math.ceil(width / 8), fy: Math.ceil((d + 4 * (inputs.length + outputs.length)) / 8),
       });
@@ -133,23 +145,27 @@ export function layoutPlan(data, res, power = null) {
   if (power) {
     const gen = power.gen;
     const [w, d] = FOOTPRINT[gen.id] || [12, 12];
-    const chunks = Math.ceil(power.count / MAX_PER_ROW);
+    const chunks = Math.ceil(power.count / MAX_GENERATORS_PER_ROW);
     for (let c = 0; c < chunks; c++) {
-      const count = Math.min(MAX_PER_ROW, power.count - c * MAX_PER_ROW);
+      const count = Math.min(MAX_GENERATORS_PER_ROW, power.count - c * MAX_GENERATORS_PER_ROW);
       const share = count / power.count;
       const width = count * (w + GAP) + GAP;
       const inputs = [];
       const fuelRate = power.fuelTotal * share;
       inputs.push({
         item: power.fuelId, rate: fuelRate, fluid: isFluid(power.fuelId),
-        from: fuelFromRows ? { kind: 'row', item: power.fuelId } : { kind: 'source', source: addSource(power.fuelId, fuelRate) },
+        from: fuelRows.length
+          ? { kind: 'row', label: fuelRows.map((f) => label(keyOf(f))).join(' + '), merged: fuelRows.length > 1 }
+          : { kind: 'source', source: addSource(power.fuelId, fuelRate) },
       });
       addConnectors(power.fuelId, count - 1, 'splitters');
+      if (c === 0) addConnectors(power.fuelId, chunks - 1, 'splitters');
+      if (c === 0 && fuelRows.length > 1) addConnectors(power.fuelId, fuelRows.length - 1, 'mergers');
       addLength(power.fuelId, fuelRate, width);
       if (power.waterTotal) {
         const water = power.waterTotal * share;
         inputs.push({ item: 'Desc_Water_C', rate: water, fluid: true, from: { kind: 'source', source: addSource('Desc_Water_C', water) } });
-        parts.junctions += count - 1;
+        parts.junctions += count - 1 + (c === 0 ? chunks - 1 : 0);
         addLength('Desc_Water_C', water, width);
       }
       rows.push({
@@ -195,7 +211,6 @@ export function renderPlan(data, res, power, ctx) {
     const b = beltFor(rate, fluid);
     return `${fluid ? 'Pipe' : 'Belt'} Mk.${b.mk}${b.lines > 1 ? `×${b.lines}` : ''}`;
   };
-  const rowName = (item) => itemName(item);
   let y = PAD;
   let maxW = 360;
   const svgRows = plan.rows.map((r) => {
@@ -215,7 +230,7 @@ export function renderPlan(data, res, power, ctx) {
     // header
     const title = r.kind === 'gen'
       ? `${r.count}× ${r.name} — ${fmt(r.mw)} MW${r.parts > 1 ? ` (row ${r.part + 1}/${r.parts})` : ''}`
-      : `${rowName(r.item)} — ${r.count}× ${machineName(r.machine)} at ${r.clock.toFixed(r.clock < 99.95 ? 1 : 0)}%${r.parts > 1 ? ` (row ${r.part + 1}/${r.parts})` : ''}`;
+      : `${r.title} — ${r.count}× ${machineName(r.machine)} at ${r.clock.toFixed(r.clock < 99.95 ? 1 : 0)}%${r.parts > 1 ? ` (row ${r.part + 1}/${r.parts})` : ''}`;
     const conn = (l, kind) => {
       const word = l.fluid ? 'junction' : kind;
       const n = r.count - 1;
@@ -247,7 +262,7 @@ export function renderPlan(data, res, power, ctx) {
       // where the lane comes from
       const f = l.from;
       let label = '';
-      if (f.kind === 'row') label = `from ${rowName(f.item)} row`;
+      if (f.kind === 'row') label = `from ${f.label} row${f.merged ? 's, merged' : ''}`;
       else if (f.kind === 'loop') label = 'loop input';
       else if (f.kind === 'source') {
         const s = f.source;
@@ -256,7 +271,11 @@ export function renderPlan(data, res, power, ctx) {
         const bx = PAD, bw = LEFT - 26;
         g.push(`<rect class="source" x="${bx}" y="${yy - 10}" width="${bw}" height="20" rx="4"/>`);
       }
-      g.push(`<text class="lane-label${f.kind === 'source' ? ' on-source' : ''}" x="${f.kind === 'source' ? PAD + 6 : PAD}" y="${yy + 4}">${esc(label)}</text>`);
+      // Source names sit in their box; "from …" labels sit just above the belt so long ones never cover it.
+      g.push(f.kind === 'source'
+        ? `<text class="lane-label on-source" x="${PAD + 6}" y="${yy + 4}">${esc(label)}</text>`
+        : `<text class="lane-label" x="${PAD}" y="${yy - 6}">${esc(label)}</text>`);
+      maxW = Math.max(maxW, PAD * 2 + label.length * 6.3);
     });
 
     // machines
@@ -278,7 +297,7 @@ export function renderPlan(data, res, power, ctx) {
         if (i > 0) g.push(l.fluid ? `<circle class="junction" cx="${px}" cy="${yy}" r="5"/>` : `<rect class="merger" x="${px - 6}" y="${yy - 6}" width="12" height="12" rx="2"/>`);
       }
       g.push(`<line class="${cls}" x1="${firstX}" y1="${yy}" x2="${endX}" y2="${yy}" marker-end="url(#plan-arrow)"/>`);
-      const dests = l.to.map((t) => (t.kind === 'row' ? `${rowName(t.item)} row ${fmt(t.rate)}`
+      const dests = l.to.map((t) => (t.kind === 'row' ? `${t.label} row ${fmt(t.rate)}`
         : t.kind === 'gen' ? `generators ${fmt(t.rate)}`
         : t.kind === 'storage' ? `Storage ${fmt(t.rate)}` : 'Sink / storage'));
       if (dests.length > 1) {
