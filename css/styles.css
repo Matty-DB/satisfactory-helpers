@@ -248,15 +248,6 @@ dialog::backdrop { background: rgb(0 0 0 / .55); }
 .flow .t2 { fill: var(--accent); font-size: 12px; font-family: var(--mono); }
 .flow .box.raw .t2 { fill: var(--muted); }
 .flow .t3 { fill: var(--muted); font-size: 11.5px; font-family: var(--mono); }
-.floor .grid line { stroke: var(--border); stroke-width: 1; }
-.floor .machine rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
-.floor .machine text { fill: var(--accent); font-size: 11px; font-weight: 700; text-anchor: middle; font-family: var(--mono); }
-.floor .lane line { stroke: var(--muted); stroke-width: 4; stroke-linecap: round; }
-.floor .lane.fluid line { stroke: var(--fluid); stroke-dasharray: 8 4; }
-.floor .row-title { fill: var(--text); font-size: 14px; font-weight: 700; }
-.floor .row-flow { fill: var(--text); font-size: 11.5px; font-family: var(--mono); }
-.floor .row-sub { fill: var(--muted); font-size: 11.5px; }
-.floor marker path { fill: var(--muted); }
 
 /* ---- builds ---- */
 .build-stage > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; margin-bottom: .6rem; }
@@ -272,3 +263,36 @@ dialog::backdrop { background: rgb(0 0 0 / .55); }
 .planner-form select, .planner-form input { width: 100%; min-width: 0; }
 @media (max-width: 560px) { .planner-form { grid-template-columns: 1fr; } }
 @media (min-width: 1100px) { .build-grid { grid-template-columns: 1fr 1fr; } }
+
+/* ---- build plans ---- */
+.build-plan { margin-top: .8rem; min-width: 0; }
+.build-grid > *, .build-stage, .card { min-width: 0; }
+.plan-summary .shopping { margin: .4rem 0; }
+.plan-summary .shopping summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; }
+.plan-summary .shopping ul { margin: 0 0 .4rem; padding-left: 1.2rem; font-size: .9rem; }
+.plan-legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .8rem; color: var(--muted); margin: .2rem 0 .6rem; }
+.plan-legend span { display: inline-flex; align-items: center; gap: .35rem; }
+.lg { display: inline-block; width: 18px; height: 0; border-top: 3px solid var(--muted); }
+.lg.pipe { border-top: 3px dashed var(--fluid); }
+.lg.lift { border-top: 2px dotted var(--muted); }
+.lg.splitter, .lg.merger { width: 11px; height: 11px; border: 0; border-radius: 2px; }
+.lg.splitter { background: var(--ok); }
+.lg.merger { background: var(--accent); }
+.lg.junction { width: 10px; height: 10px; border: 2px solid var(--fluid); border-radius: 50%; }
+.plan .belt { stroke: var(--muted); stroke-width: 3; fill: none; }
+.plan .pipe { stroke: var(--fluid); stroke-width: 3; stroke-dasharray: 7 4; fill: none; }
+.plan .drop { stroke-width: 2; }
+.plan .lift { stroke-dasharray: 2 3; }
+.plan marker path { fill: var(--muted); }
+.plan .splitter { fill: var(--ok); }
+.plan .merger { fill: var(--accent); }
+.plan .junction { fill: var(--surface); stroke: var(--fluid); stroke-width: 2.5; }
+.plan .source { fill: var(--surface-2); stroke: var(--border); }
+.plan .machine rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.plan .machine.gen rect { fill: var(--surface-2); stroke: var(--ok); }
+.plan .machine text { fill: var(--accent); font-size: 11px; font-weight: 700; text-anchor: middle; font-family: var(--mono); }
+.plan .machine.gen text { fill: var(--ok); font-size: 14px; }
+.plan .row-title { fill: var(--text); font-size: 14px; font-weight: 700; }
+.plan .row-sub { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
+.plan .lane-label { fill: var(--text); font-size: 11px; }
+.plan .lane-label.on-source { font-size: 10.5px; }

@@ -1,6 +1,7 @@
 import { DATA } from './data.js';
 import { makeIndex, solve, buildTree, recipeOptions, perMin, beltFor, BELTS, PIPES } from './calc.js';
-import { renderFlow, renderFloor } from './diagram.js';
+import { renderFlow } from './diagram.js';
+import { renderPlan } from './plan.js';
 import { powerPlan } from './power.js';
 import { buildInputs } from './builds.js';
 import { state, save, exportSettings, importSettings } from './state.js';
@@ -193,7 +194,7 @@ function recalc() {
   const views = {
     tree: () => `<div class="card"><ul class="tree">${targets.map((t) => treeNode(buildTree(index, t.item, t.rate, o), 0)).join('')}</ul></div>`,
     flow: () => `<div class="card">${renderFlow(res, ctx)}</div>`,
-    floor: () => `<div class="card">${renderFloor(res, ctx)}</div>`,
+    floor: () => `<div class="card">${renderPlan(DATA, res, null, ctx)}</div>`,
     list: () => renderBuildList(res, o, new Set(targets.map((t) => t.item))),
   };
   view.innerHTML = res.nodes.length ? (views[state.view] || views.list)() : '';
@@ -472,7 +473,9 @@ function buildCard(b) {
     <div class="target-actions">
       ${targets.length ? `<button type="button" class="btn primary" data-build-calc="${b.id}">Open in calculator</button>` : ''}
       ${power ? `<button type="button" class="btn" data-build-power="${b.id}">Open in power planner</button>` : ''}
+      <button type="button" class="btn" data-build-plan="${b.id}" aria-expanded="false">Show floor plan</button>
     </div>
+    <div class="build-plan" hidden></div>
   </article>`;
 }
 
@@ -511,6 +514,21 @@ $('#tab-builds').addEventListener('input', (e) => {
   if (e.target.id === 'planner-count') { planner.count = Math.max(1, Math.round(Number(e.target.value) || 1)); renderPlanner(); }
 });
 $('#tab-builds').addEventListener('click', (e) => {
+  const planBtn = e.target.closest('[data-build-plan]');
+  if (planBtn) {
+    const box = planBtn.closest('.build').querySelector('.build-plan');
+    const show = box.hidden;
+    if (show && !box.innerHTML) {
+      const { targets, opts: bo, power } = buildInputs(DATA, BUILDS.flatMap((st) => st.builds).find((x) => x.id === planBtn.dataset.buildPlan));
+      const res = solve(index, targets, bo);
+      const p = power ? powerPlan(DATA, power.genId, power.fuelId, power.count) : null;
+      box.innerHTML = renderPlan(DATA, res, p, { itemName, machineName, isFluid, beltFor });
+    }
+    box.hidden = !show;
+    planBtn.textContent = show ? 'Hide floor plan' : 'Show floor plan';
+    planBtn.setAttribute('aria-expanded', String(show));
+    return;
+  }
   const calcBtn = e.target.closest('[data-build-calc]');
   const powerBtn = e.target.closest('[data-build-power]');
   const find = (id) => BUILDS.flatMap((s) => s.builds).find((b) => b.id === id);

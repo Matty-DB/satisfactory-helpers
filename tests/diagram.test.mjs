@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DATA } from '../js/data.js';
 import { makeIndex, solve } from '../js/calc.js';
-import { graphOf, layoutFlow, layoutFloor } from '../js/diagram.js';
+import { graphOf, layoutFlow } from '../js/diagram.js';
 
 const index = makeIndex(DATA);
 const rip = solve(index, [{ item: 'Desc_IronPlateReinforced_C', rate: 5 }]);
@@ -26,25 +26,6 @@ test('flow edges always point downward and boxes do not overlap', () => {
     assert.ok(Math.abs(a.x - b.x) >= 190, 'boxes overlap');
   }
   assert.equal(L.edges.length, 6); // ore→ingot, ingot→plate, ingot→rod, rod→screw, plate→rip, screw→rip
-});
-
-test('floor plan: one row per step, rows ordered raw-first, big steps split', () => {
-  const { rows } = layoutFloor(rip);
-  const per = Object.fromEntries(rows.map((r) => [r.step.item, r.machines]));
-  assert.deepEqual(per, {
-    Desc_IronIngot_C: 2, Desc_IronPlate_C: 2, Desc_IronRod_C: 1, Desc_IronScrew_C: 2, Desc_IronPlateReinforced_C: 1,
-  });
-  const levels = rows.map((r) => r.step.item);
-  assert.ok(levels.indexOf('Desc_IronRod_C') < levels.indexOf('Desc_IronScrew_C'), 'rods before screws');
-  assert.equal(rows[0].step.item, 'Desc_IronIngot_C');
-  assert.equal(rows.at(-1).step.item, 'Desc_IronPlateReinforced_C');
-  // 2 Constructors: 2×(8+1)+1 = 19 m wide → 3 foundations; depth 2+10+2 = 14 m → 2.
-  const plate = rows.find((r) => r.step.item === 'Desc_IronPlate_C');
-  assert.equal(plate.fx, 3);
-  assert.equal(plate.fy, 2);
-  const big = layoutFloor(solve(index, [{ item: 'Desc_IronPlate_C', rate: 400 }])).rows;
-  const plates = big.filter((r) => r.step.item === 'Desc_IronPlate_C');
-  assert.deepEqual(plates.map((r) => r.machines), [8, 8, 4]); // 20 constructors, max 8 per row
 });
 
 test('loops render as separate input nodes', () => {

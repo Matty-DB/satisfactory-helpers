@@ -1,25 +1,5 @@
-// Flow diagram and floor plan for a solve() result.
+// Flow diagram for a solve() result. Also exports the shared graph used by plan.js.
 // Layout functions are pure (tested in Node); render functions return SVG strings.
-
-// Approximate machine footprints in metres: [width along the manifold, depth].
-// Taken from the in-game build sizes; port positions are not modelled.
-export const FOOTPRINT = {
-  Desc_SmelterMk1_C: [6, 9],
-  Desc_ConstructorMk1_C: [8, 10],
-  Desc_AssemblerMk1_C: [10, 15],
-  Desc_FoundryMk1_C: [10, 9],
-  Desc_ManufacturerMk1_C: [18, 20],
-  Desc_OilRefinery_C: [10, 20],
-  Desc_Packager_C: [8, 8],
-  Desc_Blender_C: [18, 16],
-  Desc_HadronCollider_C: [24, 38],
-  Desc_Converter_C: [16, 16],
-  Desc_QuantumEncoder_C: [22, 48],
-};
-const FOUNDATION = 8;
-const LANE = 2; // belt lane depth on each side of a row
-const GAP = 1; // walkway / pole gap between machines
-const MAX_PER_ROW = 8;
 
 // ---------- shared graph ----------
 export function graphOf(res) {
@@ -142,34 +122,6 @@ export function layoutFlow(res) {
   return { width, height, boxes: [...place.values()].filter((b) => b.kind !== 'dummy'), edges };
 }
 
-// ---------- floor plan layout ----------
-export function layoutFloor(res) {
-  const { nodes, edges } = graphOf(res);
-  const steps = res.nodes
-    .map((n) => ({ n, level: nodes.get(n.item).level }))
-    .sort((a, b) => a.level - b.level);
-  const rows = [];
-  for (const { n } of steps) {
-    const count = Math.ceil(n.machines - 1e-9);
-    const clock = (n.machines / count) * 100;
-    const [w, d] = FOOTPRINT[n.recipe.m] || [10, 10];
-    const feeds = [...new Set(edges.filter((e) => e.from === n.item).map((e) => e.to))];
-    for (let start = 0, part = 0; start < count; start += MAX_PER_ROW, part++) {
-      const k = Math.min(MAX_PER_ROW, count - start);
-      const width = k * (w + GAP) + GAP;
-      const depth = LANE + d + LANE;
-      rows.push({
-        step: n, part, parts: Math.ceil(count / MAX_PER_ROW), machines: k, clock, w, d, feeds,
-        width, depth,
-        fx: Math.ceil(width / FOUNDATION), fy: Math.ceil(depth / FOUNDATION),
-        share: k / count, // fraction of the step's flow on this row
-      });
-    }
-  }
-  const foundations = rows.reduce((s, r) => s + r.fx * r.fy, 0);
-  return { rows, foundations };
-}
-
 // ---------- rendering ----------
 const fmt = (n) => (Math.abs(n) >= 100 ? n.toFixed(1) : n.toFixed(2)).replace(/\.?0+$/, '') || '0';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -217,63 +169,4 @@ export function renderFlow(res, ctx) {
     <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
     ${edgeSvg}${boxSvg}</svg></div>
     <p class="hint">Raw resources at the top flow down to your targets. Arrow labels are items per minute (fluids in m³/min). Swipe or scroll inside the chart to see all of it.</p>`;
-}
-
-export function renderFloor(res, ctx) {
-  const { rows, foundations } = layoutFloor(res);
-  const { itemName, machineName, isFluid, beltFor } = ctx;
-  const S = 7; // px per metre
-  const labelH = 74;
-  const pad = 16;
-  let width = Math.max(360, ...rows.map((r) => r.fx * FOUNDATION * S)) + pad * 2;
-  let y = pad;
-  let maxText = 0;
-  const parts = rows.map((r) => {
-    const n = r.step;
-    const gw = r.fx * FOUNDATION * S, gh = r.fy * FOUNDATION * S;
-    const top = y + labelH;
-    y = top + gh + 26;
-    const grid = [];
-    for (let i = 0; i <= r.fx; i++) grid.push(`<line x1="${pad + i * FOUNDATION * S}" y1="${top}" x2="${pad + i * FOUNDATION * S}" y2="${top + gh}"/>`);
-    for (let j = 0; j <= r.fy; j++) grid.push(`<line x1="${pad}" y1="${top + j * FOUNDATION * S}" x2="${pad + gw}" y2="${top + j * FOUNDATION * S}"/>`);
-    const ox = pad + ((r.fx * FOUNDATION - r.width) / 2) * S;
-    const oy = top + ((r.fy * FOUNDATION - r.depth) / 2) * S;
-    const machines = Array.from({ length: r.machines }, (_, i) => {
-      const mx = ox + (GAP + i * (r.w + GAP)) * S, my = oy + LANE * S;
-      return `<g class="machine"><rect x="${mx}" y="${my}" width="${r.w * S}" height="${r.d * S}" rx="3"/>
-        <text x="${mx + (r.w * S) / 2}" y="${my + (r.d * S) / 2 + 4}">${r.clock.toFixed(0)}%</text></g>`;
-    }).join('');
-    const beltTag = (item, rate) => {
-      const fluid = isFluid(item);
-      const b = beltFor(rate, fluid);
-      return `${fluid ? 'pipe' : 'belt'} Mk.${b.mk}${b.lines > 1 ? `×${b.lines}` : ''}`;
-    };
-    const lane = (yy, item, out) => `<g class="lane${isFluid(item) ? ' fluid' : ''}">
-      <line x1="${ox}" y1="${yy}" x2="${ox + r.width * S}" y2="${yy}"${out ? ' marker-end="url(#lane-arrow)"' : ''}/></g>`;
-    // Inputs share the top lane, the output runs along the bottom one.
-    const ins = n.inputs.filter(([, rt]) => rt > 1e-9);
-    const inLane = ins.length ? lane(oy + LANE * S * 0.5, ins[0][0], false) : '';
-    const outLane = lane(oy + (LANE + r.d + LANE * 0.5) * S, n.item, true);
-    const inTxt = ins.map(([id, rt]) => `${itemName(id)} ${fmt(rt * r.share)} (${beltTag(id, rt * r.share)})`).join(' + ');
-    const outTxt = `${itemName(n.item)} ${fmt(n.rate * r.share)} (${beltTag(n.item, n.rate * r.share)})`;
-    const title = `${itemName(n.item)} — ${r.machines}× ${machineName(n.recipe.m)}${r.parts > 1 ? ` (row ${r.part + 1}/${r.parts})` : ''}`;
-    const inLine = `in:  ${inTxt || 'nothing'}`;
-    const outLine = `out: ${outTxt}`;
-    const sub = [
-      r.feeds.length ? `feeds: ${r.feeds.map(itemName).join(', ')}` : 'final output',
-      `${r.fx}×${r.fy} foundations`,
-      `all at ${r.clock.toFixed(r.clock < 99.9 ? 1 : 0)}%`,
-    ].join(' · ');
-    maxText = Math.max(maxText, inLine.length, outLine.length, sub.length);
-    return `<g class="row">
-      <text class="row-title" x="${pad}" y="${top - 56}">${esc(title)}</text>
-      <text class="row-flow" x="${pad}" y="${top - 40}">${esc(inLine)}</text>
-      <text class="row-flow" x="${pad}" y="${top - 25}">${esc(outLine)}</text>
-      <text class="row-sub" x="${pad}" y="${top - 9}">${esc(sub)}</text>
-      <g class="grid">${grid.join('')}</g>${inLane}${machines}${outLane}</g>`;
-  }).join('');
-  const height = y + pad;
-  width = Math.max(width, maxText * 7 + pad * 2);
-  return `<p class="hint">Each step is one row of machines on 8 m foundations: input belt along the top, output along the bottom. Rows are in build order from raw resources down to your targets. <strong>About ${foundations} foundations</strong> if you build every row separately. Footprints are approximate and port positions vary, so leave some room.</p>
-    <div class="diagram-wrap"><svg class="floor" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Floor plan"><defs><marker id="lane-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3" markerHeight="3" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>${parts}</svg></div>`;
 }
