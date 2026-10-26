@@ -2,7 +2,7 @@
 
 Production calculator and quick reference for Satisfactory 1.x, made to sit on a phone, tablet or laptop next to a PS5.
 
-- **Calculator:** pick items and a rate per minute. You get machine counts with clock settings, raw resources, power, belt/pipe tier, byproducts, and a tree view. Filters by your tier and uses the alternate recipes you've ticked.
+- **Calculator:** pick items and a rate per minute. You get machine counts with clock settings, raw resources, power, belt/pipe tier, byproducts, a tree view, a flow diagram and a rough floor plan on 8 m foundations. Filters by your tier and uses the alternate recipes you've ticked.
 - **Milestones:** HUB tiers and Space Elevator phases with tick-off progress. "Plan" sends a cost straight to the calculator.
 - **Machines & power:** overclock calculator, machine MW, belts/pipes, extractor rates, generators.
 - **Best alts:** curated alternates, with recipe numbers taken from the game data.

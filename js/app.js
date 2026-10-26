@@ -1,5 +1,6 @@
 import { DATA } from './data.js';
-import { makeIndex, solve, buildTree, recipeOptions, perMin, BELTS, PIPES } from './calc.js';
+import { makeIndex, solve, buildTree, recipeOptions, perMin, beltFor, BELTS, PIPES } from './calc.js';
+import { renderFlow, renderFloor } from './diagram.js';
 import { state, save, exportSettings, importSettings } from './state.js';
 import { BEST_ALTS, SPACE_ELEVATOR, EXTRACTORS, PS5_TIPS } from './ref-content.js';
 
@@ -185,9 +186,14 @@ function recalc() {
   const o = opts();
   const res = solve(index, targets, o);
   summary.innerHTML = renderSummary(res);
-  view.innerHTML = state.view === 'tree'
-    ? `<div class="card"><ul class="tree">${targets.map((t) => treeNode(buildTree(index, t.item, t.rate, o), 0)).join('')}</ul></div>`
-    : renderBuildList(res, o, new Set(targets.map((t) => t.item)));
+  const ctx = { itemName, machineName, isFluid, beltFor };
+  const views = {
+    tree: () => `<div class="card"><ul class="tree">${targets.map((t) => treeNode(buildTree(index, t.item, t.rate, o), 0)).join('')}</ul></div>`,
+    flow: () => `<div class="card">${renderFlow(res, ctx)}</div>`,
+    floor: () => `<div class="card">${renderFloor(res, ctx)}</div>`,
+    list: () => renderBuildList(res, o, new Set(targets.map((t) => t.item))),
+  };
+  view.innerHTML = res.nodes.length ? (views[state.view] || views.list)() : '';
 }
 
 function renderSummary(res) {

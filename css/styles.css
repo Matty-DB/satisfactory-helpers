@@ -131,8 +131,8 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px; }
 
 .notice { border-radius: var(--radius); padding: .7rem .9rem; background: var(--warn-soft); color: var(--warn); margin-bottom: .6rem; font-size: .9rem; }
 
-.view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: .8rem; }
-.view-toggle button { min-height: 40px; padding: 0 1rem; border: 0; background: var(--surface); cursor: pointer; }
+.view-toggle { display: inline-flex; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: .8rem; }
+.view-toggle button { min-height: 40px; padding: 0 .8rem; flex: 1 1 auto; white-space: nowrap; border: 0; background: var(--surface); cursor: pointer; }
 .view-toggle button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 
 .build-list { display: grid; gap: .6rem; }
@@ -229,3 +229,30 @@ dialog::backdrop { background: rgb(0 0 0 / .55); }
 .ms-top { flex-wrap: nowrap; align-items: flex-start; }
 .ms-top > :first-child { flex: 1; min-width: 0; }
 .ms-top > .btn { flex: none; }
+
+/* ---- diagrams ---- */
+.diagram-wrap { overflow: auto; max-height: 75vh; -webkit-overflow-scrolling: touch; border-radius: 8px; background: var(--bg); }
+.diagram-wrap svg { display: block; font-family: var(--font); }
+.flow .edge path { fill: none; stroke: var(--muted); stroke-width: 1.6; }
+.flow .edge.fluid path { stroke: var(--fluid); }
+.flow .edge.loop path { stroke: var(--warn); stroke-dasharray: 5 4; }
+.flow .edge rect { fill: var(--surface); stroke: var(--border); }
+.flow .edge text { fill: var(--text); font-size: 11px; text-anchor: middle; font-family: var(--mono); }
+.flow marker path { fill: var(--muted); }
+.flow .box rect { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.5; }
+.flow .box.step rect { stroke: var(--accent); }
+.flow .box.raw rect { fill: var(--surface); stroke-dasharray: 4 3; }
+.flow .box.missing rect, .flow .box.loop rect { fill: var(--warn-soft); stroke: var(--warn); }
+.flow .t1 { fill: var(--text); font-size: 13px; font-weight: 700; }
+.flow .t2 { fill: var(--accent); font-size: 12px; font-family: var(--mono); }
+.flow .box.raw .t2 { fill: var(--muted); }
+.flow .t3 { fill: var(--muted); font-size: 11.5px; font-family: var(--mono); }
+.floor .grid line { stroke: var(--border); stroke-width: 1; }
+.floor .machine rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.floor .machine text { fill: var(--accent); font-size: 11px; font-weight: 700; text-anchor: middle; font-family: var(--mono); }
+.floor .lane line { stroke: var(--muted); stroke-width: 4; stroke-linecap: round; }
+.floor .lane.fluid line { stroke: var(--fluid); stroke-dasharray: 8 4; }
+.floor .row-title { fill: var(--text); font-size: 14px; font-weight: 700; }
+.floor .row-flow { fill: var(--text); font-size: 11.5px; font-family: var(--mono); }
+.floor .row-sub { fill: var(--muted); font-size: 11.5px; }
+.floor marker path { fill: var(--muted); }
