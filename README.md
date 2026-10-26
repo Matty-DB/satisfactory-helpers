@@ -20,6 +20,7 @@ No build step. Serve the folder (ES modules don't load from `file://`):
 python3 -m http.server 8000   # then open http://localhost:8000
 npm test                      # solver + content tests (node --test)
 npm run build-data            # regenerate js/data.js from the pinned upstream data
+npm run stamp                 # refresh cache-busting hashes in index.html (tests fail if stale)
 ```
 
 Game data: [SatisfactoryTools](https://github.com/greeny/SatisfactoryTools) `data/data1.0.json`, pinned in `tools/build-data.mjs`.
