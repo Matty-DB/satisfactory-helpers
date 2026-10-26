@@ -1,7 +1,9 @@
 import { DATA } from './data.js';
 import { makeIndex, solve, buildTree, recipeOptions, perMin, beltFor, BELTS, PIPES } from './calc.js';
 import { renderFlow } from './diagram.js';
-import { renderPlan } from './plan.js';
+import { layoutPlan, partsList } from './plan.js';
+import { renderFactory } from './factory.js';
+import { panZoom } from './panzoom.js';
 import { powerPlan } from './power.js';
 import { buildInputs } from './builds.js';
 import { state, save, exportSettings, importSettings } from './state.js';
@@ -43,7 +45,7 @@ $('#theme-toggle').addEventListener('click', () => {
 applyTheme();
 
 const rendered = {};
-const tabRenderers = { builds: renderBuilds, milestones: renderMilestones, research: renderResearch, machines: renderMachines, alts: renderBestAlts, tips: renderTips };
+const tabRenderers = { floor: renderFloorTab, builds: renderBuilds, milestones: renderMilestones, research: renderResearch, machines: renderMachines, alts: renderBestAlts, tips: renderTips };
 function showTab(name) {
   for (const b of document.querySelectorAll('[role="tab"]')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const p of document.querySelectorAll('.panel')) p.hidden = p.id !== `tab-${name}`;
@@ -194,7 +196,8 @@ function recalc() {
   const views = {
     tree: () => `<div class="card"><ul class="tree">${targets.map((t) => treeNode(buildTree(index, t.item, t.rate, o), 0)).join('')}</ul></div>`,
     flow: () => `<div class="card">${renderFlow(res, ctx)}</div>`,
-    floor: () => `<div class="card">${renderPlan(DATA, res, null, ctx)}</div>`,
+    floor: () => `<div class="card"><div class="target-actions" style="margin-bottom:.6rem"><button type="button" class="btn primary" id="open-fp-calc">Open in Floor plans (zoom &amp; pan)</button></div>
+      <div class="diagram-wrap">${renderFactory(DATA, layoutPlan(DATA, res), ctx)}</div></div>`,
     list: () => renderBuildList(res, o, new Set(targets.map((t) => t.item))),
   };
   view.innerHTML = res.nodes.length ? (views[state.view] || views.list)() : '';
@@ -420,6 +423,90 @@ $('#tab-milestones').addEventListener('click', (e) => {
   planCost(JSON.parse(b.dataset.plan), Number($('#plan-minutes').value) || 10);
 });
 
+// ---------- floor plans tab ----------
+const allBuilds = () => BUILDS.flatMap((st) => st.builds);
+let fpView = null;
+
+function floorSource(pick) {
+  if (pick?.startsWith('build:')) {
+    const b = allBuilds().find((x) => x.id === pick.slice(6));
+    if (b) {
+      const n = buildScale[b.id] ?? b.scale?.value;
+      const { targets, opts: bo, power } = buildInputs(DATA, b, n);
+      return { title: b.title, build: b, n, res: solve(index, targets, bo), power: power ? powerPlan(DATA, power.genId, power.fuelId, power.count) : null };
+    }
+  }
+  const targets = state.targets.filter((t) => t.item && t.rate > 0);
+  return { title: 'Calculator targets', res: solve(index, targets, opts()), power: null };
+}
+
+function openFloorPlan(pick) {
+  state.fpPick = pick;
+  save();
+  showTab('floor');
+  renderFloorTab();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderFloorTab() {
+  const pickEl = $('#fp-pick');
+  const pick = state.fpPick || 'calc';
+  pickEl.innerHTML = `<option value="calc">Calculator targets</option>${BUILDS.map((st) =>
+    `<optgroup label="${esc(st.stage)}">${st.builds.map((b) => `<option value="build:${b.id}">${esc(b.title)}</option>`).join('')}</optgroup>`).join('')}`;
+  pickEl.value = pick;
+  if (pickEl.value !== pick) pickEl.value = 'calc';
+  const src = floorSource(pickEl.value);
+  const scaleWrap = $('.fp-scale');
+  scaleWrap.hidden = !src.build?.scale;
+  if (src.build?.scale) {
+    $('#fp-scale-label').textContent = src.build.scale.label;
+    Object.assign($('#fp-scale'), { min: src.build.scale.min, max: src.build.scale.max, value: src.n });
+  }
+  const canvas = $('#fp-canvas');
+  $('#fp-info').hidden = true;
+  if (!src.res.nodes.length && !src.power) {
+    canvas.innerHTML = '<p class="hint" style="padding:1rem">Nothing to draw yet. Pick a build above, or add items in the Calculator.</p>';
+    $('#fp-notes').innerHTML = '';
+    fpView = null;
+    return;
+  }
+  const plan = layoutPlan(DATA, src.res, src.power);
+  canvas.innerHTML = renderFactory(DATA, plan, { itemName, machineName });
+  fpView = panZoom(canvas, canvas.querySelector('svg'), {
+    onTap: (target) => {
+      const m = target.closest?.('.fp-machine');
+      const box = $('#fp-info');
+      if (!m) { box.hidden = true; return; }
+      const info = JSON.parse(m.dataset.info);
+      box.innerHTML = `<h3 style="margin:0 0 .3rem">${esc(info.title)}</h3><ul class="tips-list" style="margin:0">${info.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`;
+      box.hidden = false;
+    },
+  });
+  $('#fp-notes').innerHTML = `
+    <div class="plan-legend">
+      <span><i class="lg belt"></i>belt</span><span><i class="lg pipe"></i>pipe</span>
+      <span><i class="lg splitter"></i>splitter</span><span><i class="lg merger"></i>merger</span>
+      <span><i class="lg junction"></i>pipe junction</span><span><i class="lg lift"></i>stacked belt / lift</span>
+      <span><i class="lg hop"></i>belt passes over</span></div>
+    <p class="hint">Raw resources come in on the left. Every item you make gets its own line on the bus at the right: rows put their output onto it, and rows that need it branch off with a splitter. Drag to move, pinch or scroll to zoom, tap a machine for details. About <strong>${plan.foundations} foundations</strong> of machine floor; sizes are approximate and port positions vary, so leave some room.</p>
+    <h3>Shopping list <span class="hint" style="font-weight:400">(logistics only)</span></h3>
+    <ul class="tips-list">${partsList(plan).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+}
+
+$('#fp-pick').addEventListener('change', (e) => { state.fpPick = e.target.value; save(); renderFloorTab(); });
+$('#fp-scale').addEventListener('change', (e) => {
+  const b = floorSource(state.fpPick).build;
+  const n = Math.round(Number(e.target.value));
+  if (!b?.scale || !(n >= b.scale.min && n <= b.scale.max)) return;
+  buildScale[b.id] = n;
+  if (rendered.builds) renderBuilds();
+  renderFloorTab();
+});
+$('#fp-in').addEventListener('click', () => fpView?.zoomIn());
+$('#fp-out').addEventListener('click', () => fpView?.zoomOut());
+$('#fp-fit').addEventListener('click', () => fpView?.fit());
+$('#result-view').addEventListener('click', (e) => { if (e.target.id === 'open-fp-calc') openFloorPlan('calc'); });
+
 // ---------- builds & power planner ----------
 const planner = { gen: 'Desc_GeneratorCoal_C', fuel: 'Desc_Coal_C', count: 8 };
 
@@ -483,9 +570,8 @@ function buildCard(b) {
     <div class="target-actions">
       ${targets.length ? `<button type="button" class="btn primary" data-build-calc="${b.id}">Open in calculator</button>` : ''}
       ${power ? `<button type="button" class="btn" data-build-power="${b.id}">Open in power planner</button>` : ''}
-      <button type="button" class="btn" data-build-plan="${b.id}" aria-expanded="false">Show floor plan</button>
+      <button type="button" class="btn" data-build-plan="${b.id}">Open floor plan</button>
     </div>
-    <div class="build-plan" hidden></div>
   </article>`;
 }
 
@@ -528,32 +614,13 @@ $('#tab-builds').addEventListener('input', (e) => {
     const n = Math.round(Number(e.target.value));
     if (!(n >= b.scale.min && n <= b.scale.max)) return; // wait until the number is valid
     buildScale[id] = n;
-    const card = $(`#build-${id}`);
-    const planOpen = !card.querySelector('.build-plan').hidden;
-    card.outerHTML = buildCard(b);
-    const fresh = $(`#build-${id}`);
-    const input = fresh.querySelector('[data-build-scale]');
-    input.focus();
-    if (planOpen) fresh.querySelector('[data-build-plan]').click();
+    $(`#build-${id}`).outerHTML = buildCard(b);
+    $(`#build-${id} [data-build-scale]`).focus();
   }
 });
 $('#tab-builds').addEventListener('click', (e) => {
   const planBtn = e.target.closest('[data-build-plan]');
-  if (planBtn) {
-    const box = planBtn.closest('.build').querySelector('.build-plan');
-    const show = box.hidden;
-    if (show && !box.innerHTML) {
-      const id = planBtn.dataset.buildPlan;
-      const { targets, opts: bo, power } = buildInputs(DATA, BUILDS.flatMap((st) => st.builds).find((x) => x.id === id), buildScale[id]);
-      const res = solve(index, targets, bo);
-      const p = power ? powerPlan(DATA, power.genId, power.fuelId, power.count) : null;
-      box.innerHTML = renderPlan(DATA, res, p, { itemName, machineName, isFluid, beltFor });
-    }
-    box.hidden = !show;
-    planBtn.textContent = show ? 'Hide floor plan' : 'Show floor plan';
-    planBtn.setAttribute('aria-expanded', String(show));
-    return;
-  }
+  if (planBtn) { openFloorPlan(`build:${planBtn.dataset.buildPlan}`); return; }
   const calcBtn = e.target.closest('[data-build-calc]');
   const powerBtn = e.target.closest('[data-build-power]');
   const find = (id) => BUILDS.flatMap((s) => s.builds).find((b) => b.id === id);

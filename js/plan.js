@@ -1,6 +1,6 @@
 // Build plans: rows of machines on manifolds with splitters, mergers, pipe junctions,
 // sources (miners, extractors) and sinks (storage, AWESOME Sink), plus a parts list.
-// layoutPlan is pure (tested in Node); renderPlan returns an SVG string.
+// layoutPlan is pure (tested in Node); factory.js draws it.
 import { graphOf } from './diagram.js';
 import { beltFor } from './calc.js';
 
@@ -108,7 +108,7 @@ export function layoutPlan(data, res, power = null) {
         const fromNode = gnodes.get(es[0].from);
         let from;
         if (fromNode.kind === 'step') {
-          from = { kind: 'row', label: es.map((x) => label(x.from)).join(' + '), merged: es.length > 1 };
+          from = { kind: 'row', keys: es.map((x) => x.from), label: es.map((x) => label(x.from)).join(' + '), merged: es.length > 1 };
           parts.mergers += es.length - 1; // belts from several rows join before this one
         } else if (fromNode.kind === 'loop') from = { kind: 'loop' };
         else from = { kind: 'source', source: addSource(item, rate * share) };
@@ -120,7 +120,7 @@ export function layoutPlan(data, res, power = null) {
       const outputs = n.outputs.filter(([, r]) => r > 1e-9).map(([item, rate]) => {
         const lane = { item, rate: rate * share, fluid: isFluid(item), to: [] };
         if (item === n.item) {
-          for (const e of edges.filter((x) => x.from === key)) lane.to.push({ kind: 'row', label: label(e.to), rate: e.rate * share });
+          for (const e of edges.filter((x) => x.from === key)) lane.to.push({ kind: 'row', key: e.to, label: label(e.to), rate: e.rate * share });
           if (power && item === power.fuelId) lane.to.push({ kind: 'gen', rate: ((power.fuelTotal * n.rate) / res.demand[item]) * share });
           const left = leaving(n);
           if (left > 1e-6) { lane.to.push({ kind: 'storage', rate: left * share }); parts.containers += 1; }
@@ -135,7 +135,7 @@ export function layoutPlan(data, res, power = null) {
         return lane;
       });
       rows.push({
-        kind: 'step', item: n.item, title: label(key), recipe: n.recipe, machine: n.recipe.m, count, clock, w, d, width,
+        kind: 'step', key, item: n.item, title: label(key), recipe: n.recipe, machine: n.recipe.m, count, clock, w, d, width,
         part: c, parts: chunks, inputs, outputs,
         fx: Math.ceil(width / 8), fy: Math.ceil((d + 4 * (inputs.length + outputs.length)) / 8),
       });
@@ -155,7 +155,7 @@ export function layoutPlan(data, res, power = null) {
       inputs.push({
         item: power.fuelId, rate: fuelRate, fluid: isFluid(power.fuelId),
         from: fuelRows.length
-          ? { kind: 'row', label: fuelRows.map((f) => label(keyOf(f))).join(' + '), merged: fuelRows.length > 1 }
+          ? { kind: 'row', keys: fuelRows.map(keyOf), label: fuelRows.map((f) => label(keyOf(f))).join(' + '), merged: fuelRows.length > 1 }
           : { kind: 'source', source: addSource(power.fuelId, fuelRate) },
       });
       addConnectors(power.fuelId, count - 1, 'splitters');
@@ -169,7 +169,7 @@ export function layoutPlan(data, res, power = null) {
         addLength('Desc_Water_C', water, width);
       }
       rows.push({
-        kind: 'gen', item: power.fuelId, machine: gen.id, name: gen.n, count, clock: 100, w, d, width,
+        kind: 'gen', key: `gen:${gen.id}`, item: power.fuelId, machine: gen.id, name: gen.n, count, clock: 100, w, d, width,
         part: c, parts: chunks, inputs, outputs: [], mw: gen.mw * count,
         fx: Math.ceil(width / 8), fy: Math.ceil((d + 4 * inputs.length) / 8),
       });
@@ -180,9 +180,6 @@ export function layoutPlan(data, res, power = null) {
   return { rows, sources, parts, foundations };
 }
 
-// ---------- rendering ----------
-const fmt = (n) => (Math.abs(n) >= 100 ? n.toFixed(1) : n.toFixed(2)).replace(/\.?0+$/, '') || '0';
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export function partsList(plan) {
   const p = plan.parts;
@@ -198,130 +195,4 @@ export function partsList(plan) {
   for (const [mk, m] of Object.entries(p.belt)) out.push(`~${Math.ceil(m / 10) * 10} m Conveyor Belt Mk.${mk}`);
   for (const [mk, m] of Object.entries(p.pipe)) out.push(`~${Math.ceil(m / 10) * 10} m Pipeline Mk.${mk}`);
   return out;
-}
-
-export function renderPlan(data, res, power, ctx) {
-  const plan = layoutPlan(data, res, power);
-  const { itemName, machineName } = ctx;
-  const S = 6; // px per metre
-  const LEFT = 170, RIGHT = 190, PAD = 14, LANE = 20, HEAD = 70;
-  const lane = (fluid) => (fluid ? 'pipe' : 'belt');
-  const tag = (item, rate) => {
-    const fluid = !!data.items[item]?.f;
-    const b = beltFor(rate, fluid);
-    return `${fluid ? 'Pipe' : 'Belt'} Mk.${b.mk}${b.lines > 1 ? `×${b.lines}` : ''}`;
-  };
-  let y = PAD;
-  let maxW = 360;
-  const svgRows = plan.rows.map((r) => {
-    const mw = r.w * S, md = r.d * S, gap = GAP * S;
-    const x0 = PAD + LEFT;
-    const rowTop = y;
-    const rowW = r.count * (mw + gap) + gap;
-    maxW = Math.max(maxW, x0 + rowW + RIGHT + PAD);
-    const top = y + HEAD;
-    const inY = r.inputs.map((_, j) => top + j * LANE + 8);
-    const machY = top + r.inputs.length * LANE + 14;
-    const outY = r.outputs.map((_, j) => machY + md + 16 + j * LANE);
-    const bottom = (outY.at(-1) ?? machY + md) + 18;
-    y = bottom + 22;
-    const portX = (i, j, k) => x0 + gap + i * (mw + gap) + (mw * (j + 1)) / (k + 1);
-    const g = [];
-    // header
-    const title = r.kind === 'gen'
-      ? `${r.count}× ${r.name} — ${fmt(r.mw)} MW${r.parts > 1 ? ` (row ${r.part + 1}/${r.parts})` : ''}`
-      : `${r.title} — ${r.count}× ${machineName(r.machine)} at ${r.clock.toFixed(r.clock < 99.95 ? 1 : 0)}%${r.parts > 1 ? ` (row ${r.part + 1}/${r.parts})` : ''}`;
-    const conn = (l, kind) => {
-      const word = l.fluid ? 'junction' : kind;
-      const n = r.count - 1;
-      return n ? `${n} ${word}${n > 1 ? 's' : ''}` : `no ${word}s`;
-    };
-    const sub = [
-      ...r.inputs.map((l) => `in ${itemName(l.item)} ${fmt(l.rate)}/min · ${tag(l.item, l.rate)} · ${conn(l, 'splitter')}`),
-      ...r.outputs.map((l) => `out ${itemName(l.item)} ${fmt(l.rate)}/min · ${tag(l.item, l.rate)} · ${conn(l, 'merger')}`),
-    ];
-    g.push(`<text class="row-title" x="${PAD}" y="${rowTop + 16}">${esc(title)}</text>`);
-    // detail lines: up to 3, extra ones joined onto the last
-    const subTop = rowTop + 32;
-    const lines = sub.length > 3 ? [...sub.slice(0, 2), sub.slice(2).join(' · ')] : sub;
-    lines.forEach((t, i) => g.push(`<text class="row-sub" x="${PAD}" y="${subTop + i * 14}">${esc(t)}</text>`));
-    maxW = Math.max(maxW, PAD * 2 + Math.max(...lines.map((t) => t.length)) * 6.3);
-
-    // input lanes with splitters / junctions
-    r.inputs.forEach((l, j) => {
-      const yy = inY[j];
-      const cls = lane(l.fluid);
-      const lastX = portX(r.count - 1, j, r.inputs.length);
-      g.push(`<line class="${cls}" x1="${x0 - 30}" y1="${yy}" x2="${lastX}" y2="${yy}"/>`);
-      for (let i = 0; i < r.count; i++) {
-        const px = portX(i, j, r.inputs.length);
-        const crossing = j < r.inputs.length - 1;
-        g.push(`<line class="${cls} drop${crossing ? ' lift' : ''}" x1="${px}" y1="${yy}" x2="${px}" y2="${machY}" marker-end="url(#plan-arrow)"/>`);
-        if (i < r.count - 1) g.push(l.fluid ? `<circle class="junction" cx="${px}" cy="${yy}" r="5"/>` : `<rect class="splitter" x="${px - 6}" y="${yy - 6}" width="12" height="12" rx="2"/>`);
-      }
-      // where the lane comes from
-      const f = l.from;
-      let label = '';
-      if (f.kind === 'row') label = `from ${f.label} row${f.merged ? 's, merged' : ''}`;
-      else if (f.kind === 'loop') label = 'loop input';
-      else if (f.kind === 'source') {
-        const s = f.source;
-        label = s.kind === 'hand' ? `Storage (${s.note})`
-          : `${s.count}× ${s.building}${s.count > 1 ? (l.fluid ? ', joined' : ', merged') : ''}`;
-        const bx = PAD, bw = LEFT - 26;
-        g.push(`<rect class="source" x="${bx}" y="${yy - 10}" width="${bw}" height="20" rx="4"/>`);
-      }
-      // Source names sit in their box; "from …" labels sit just above the belt so long ones never cover it.
-      g.push(f.kind === 'source'
-        ? `<text class="lane-label on-source" x="${PAD + 6}" y="${yy + 4}">${esc(label)}</text>`
-        : `<text class="lane-label" x="${PAD}" y="${yy - 6}">${esc(label)}</text>`);
-      maxW = Math.max(maxW, PAD * 2 + label.length * 6.3);
-    });
-
-    // machines
-    for (let i = 0; i < r.count; i++) {
-      const mx = x0 + gap + i * (mw + gap);
-      g.push(`<g class="machine ${r.kind}"><rect x="${mx}" y="${machY}" width="${mw}" height="${md}" rx="3"/>
-        <text x="${mx + mw / 2}" y="${machY + md / 2 + 4}">${r.kind === 'gen' ? '⚡' : `${r.clock.toFixed(0)}%`}</text></g>`);
-    }
-
-    // output lanes with mergers, then where they go
-    r.outputs.forEach((l, j) => {
-      const yy = outY[j];
-      const cls = lane(l.fluid);
-      const firstX = portX(0, j, r.outputs.length);
-      const endX = x0 + rowW + 30;
-      for (let i = 0; i < r.count; i++) {
-        const px = portX(i, j, r.outputs.length);
-        g.push(`<line class="${cls} drop${j > 0 ? ' lift' : ''}" x1="${px}" y1="${machY + md}" x2="${px}" y2="${yy}"/>`);
-        if (i > 0) g.push(l.fluid ? `<circle class="junction" cx="${px}" cy="${yy}" r="5"/>` : `<rect class="merger" x="${px - 6}" y="${yy - 6}" width="12" height="12" rx="2"/>`);
-      }
-      g.push(`<line class="${cls}" x1="${firstX}" y1="${yy}" x2="${endX}" y2="${yy}" marker-end="url(#plan-arrow)"/>`);
-      const dests = l.to.map((t) => (t.kind === 'row' ? `${t.label} row ${fmt(t.rate)}`
-        : t.kind === 'gen' ? `generators ${fmt(t.rate)}`
-        : t.kind === 'storage' ? `Storage ${fmt(t.rate)}` : 'Sink / storage'));
-      if (dests.length > 1) {
-        g.push(l.fluid ? `<circle class="junction" cx="${endX - 14}" cy="${yy}" r="5"/>` : `<rect class="splitter" x="${endX - 20}" y="${yy - 6}" width="12" height="12" rx="2"/>`);
-      }
-      g.push(`<text class="lane-label" x="${endX + 8}" y="${yy + 4}">→ ${esc(dests.join(' + '))}</text>`);
-      maxW = Math.max(maxW, endX + 16 + dests.join(' + ').length * 6.3 + PAD);
-    });
-    if (r.kind === 'gen') g.push(`<text class="lane-label" x="${x0 + rowW + 8}" y="${machY + md / 2 + 4}">→ power grid</text>`);
-    return `<g class="plan-row">${g.join('')}</g>`;
-  }).join('');
-
-  const height = y + PAD;
-  const legend = `<div class="plan-legend">
-    <span><i class="lg belt"></i>belt</span><span><i class="lg pipe"></i>pipe</span>
-    <span><i class="lg splitter"></i>splitter</span><span><i class="lg merger"></i>merger</span>
-    <span><i class="lg junction"></i>pipe junction</span><span><i class="lg lift"></i>lift / stacked belt</span></div>`;
-  const shopping = partsList(plan);
-  return `<div class="plan-summary">
-      <p class="hint" style="margin-top:0">Rows run from raw resources down to the finished product. Each input belt passes every machine with a splitter in front of each one; the last machine takes the end of the belt. Outputs join with mergers. About <strong>${plan.foundations} foundations</strong> in total. Sizes are approximate and port positions vary, so leave some room.</p>
-      <details class="shopping"><summary><strong>Shopping list</strong>&nbsp;(logistics only)</summary><ul>${shopping.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>
-      ${legend}
-    </div>
-    <div class="diagram-wrap"><svg class="plan" viewBox="0 0 ${Math.ceil(maxW)} ${height}" width="${Math.ceil(maxW)}" height="${height}" role="img" aria-label="Build plan">
-      <defs><marker id="plan-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
-      ${svgRows}</svg></div>`;
 }

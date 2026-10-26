@@ -265,11 +265,7 @@ dialog::backdrop { background: rgb(0 0 0 / .55); }
 @media (min-width: 1100px) { .build-grid { grid-template-columns: 1fr 1fr; } }
 
 /* ---- build plans ---- */
-.build-plan { margin-top: .8rem; min-width: 0; }
 .build-grid > *, .build-stage, .card { min-width: 0; }
-.plan-summary .shopping { margin: .4rem 0; }
-.plan-summary .shopping summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; }
-.plan-summary .shopping ul { margin: 0 0 .4rem; padding-left: 1.2rem; font-size: .9rem; }
 .plan-legend { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .8rem; color: var(--muted); margin: .2rem 0 .6rem; }
 .plan-legend span { display: inline-flex; align-items: center; gap: .35rem; }
 .lg { display: inline-block; width: 18px; height: 0; border-top: 3px solid var(--muted); }
@@ -279,22 +275,48 @@ dialog::backdrop { background: rgb(0 0 0 / .55); }
 .lg.splitter { background: var(--ok); }
 .lg.merger { background: var(--accent); }
 .lg.junction { width: 10px; height: 10px; border: 2px solid var(--fluid); border-radius: 50%; }
-.plan .belt { stroke: var(--muted); stroke-width: 3; fill: none; }
-.plan .pipe { stroke: var(--fluid); stroke-width: 3; stroke-dasharray: 7 4; fill: none; }
-.plan .drop { stroke-width: 2; }
-.plan .lift { stroke-dasharray: 2 3; }
-.plan marker path { fill: var(--muted); }
-.plan .splitter { fill: var(--ok); }
-.plan .merger { fill: var(--accent); }
-.plan .junction { fill: var(--surface); stroke: var(--fluid); stroke-width: 2.5; }
-.plan .source { fill: var(--surface-2); stroke: var(--border); }
-.plan .machine rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
-.plan .machine.gen rect { fill: var(--surface-2); stroke: var(--ok); }
-.plan .machine text { fill: var(--accent); font-size: 11px; font-weight: 700; text-anchor: middle; font-family: var(--mono); }
-.plan .machine.gen text { fill: var(--ok); font-size: 14px; }
-.plan .row-title { fill: var(--text); font-size: 14px; font-weight: 700; }
-.plan .row-sub { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
-.plan .lane-label { fill: var(--text); font-size: 11px; }
-.plan .lane-label.on-source { font-size: 10.5px; }
+.lg.hop { width: 18px; height: 9px; border: 0; border-top: 3px solid var(--muted); border-radius: 9px 9px 0 0; }
 .build .scale { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; margin-bottom: .4rem; }
 .build .scale input { width: 6rem; }
+
+/* ---- floor plans tab ---- */
+.fp-toolbar { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: end; margin-bottom: .6rem; }
+.fp-toolbar label { display: grid; gap: .25rem; font-size: .85rem; color: var(--muted); }
+.fp-pick { flex: 1 1 240px; min-width: 0; }
+.fp-pick select { width: 100%; }
+.fp-scale input { width: 6rem; }
+.fp-toolbar [hidden] { display: none; }
+.fp-zoom { display: flex; gap: .4rem; }
+.fp-canvas {
+  height: max(380px, calc(100dvh - 240px)); border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.fp-canvas:active { cursor: grabbing; }
+.fp-canvas svg { width: 100%; height: 100%; display: block; }
+.fp-info { margin-top: .6rem; }
+#fp-notes { margin-top: .6rem; }
+svg.fp { font-family: var(--font); }
+.fp .fgrid { stroke: var(--border); stroke-width: .6; opacity: .45; fill: none; }
+.fp .belt { stroke: var(--muted); stroke-width: 3; fill: none; stroke-linecap: round; }
+.fp .pipe { stroke: var(--fluid); stroke-width: 3; fill: none; stroke-dasharray: 7 4; }
+.fp .bus { stroke-width: 4; }
+.fp .drop { stroke-width: 2; }
+.fp .lift { stroke-dasharray: 2 3; }
+.fp marker path { fill: var(--muted); }
+.fp .fp-splitter { fill: var(--ok); }
+.fp .fp-merger { fill: var(--accent); }
+.fp .fp-junction { fill: var(--surface); stroke: var(--fluid); stroke-width: 2.5; }
+.fp .fp-source rect { fill: var(--surface-2); stroke: var(--border); }
+.fp .fp-source text, .fp .fp-store text { fill: var(--text); font-size: 11px; }
+.fp .fp-store rect { fill: var(--surface); stroke: var(--ok); }
+.fp .fp-store.sink rect { stroke: var(--warn); }
+.fp .fp-machine rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.fp .fp-machine.gen rect { fill: var(--surface-2); stroke: var(--ok); }
+.fp .fp-machine text { fill: var(--accent); font-size: 11px; font-weight: 700; text-anchor: middle; font-family: var(--mono); pointer-events: none; }
+.fp .fp-machine.gen text { fill: var(--ok); font-size: 14px; }
+.fp .fp-machine { cursor: pointer; }
+.fp .fp-machine:focus rect, .fp .fp-machine:hover rect { stroke-width: 3; }
+.fp .fp-title { fill: var(--text); font-size: 14px; font-weight: 700; }
+.fp .fp-sub { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
+.fp .fp-lane { fill: var(--text); font-size: 10.5px; font-family: var(--mono); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+.fp .fp-bus { fill: var(--text); font-size: 11px; font-weight: 600; }

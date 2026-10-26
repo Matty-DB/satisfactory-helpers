@@ -2,8 +2,9 @@
 
 Production calculator and quick reference for Satisfactory 1.x, made to sit on a phone, tablet or laptop next to a PS5.
 
-- **Calculator:** pick items and a rate per minute. You get machine counts with clock settings, raw resources, power, belt/pipe tier, byproducts, a tree view, a flow diagram and a floor plan with splitters, mergers, pipe junctions, miners and a shopping list. Filters by your tier and uses the alternate recipes you've ticked.
-- **Builds:** power planner (generators → fuel, water, extractors, miners, net MW) and ready-made setups from Biomass Burners to nuclear, each with computed machine counts, tips, a floor plan and "Open in calculator".
+- **Calculator:** pick items and a rate per minute. You get machine counts with clock settings, raw resources, power, belt/pipe tier, byproducts, a tree view, a flow diagram, and a link to its floor plan. Filters by your tier and uses the alternate recipes you've ticked.
+- **Floor plans:** a connected main-bus layout of any build or your calculator targets: sources on the left, one bus line per item on the right, splitters, mergers, pipe junctions and hops where belts cross. Pan, pinch/scroll to zoom, tap a machine for details, plus a logistics shopping list.
+- **Builds:** power planner (generators → fuel, water, extractors, miners, net MW) and ready-made setups from Biomass Burners to nuclear, each with computed machine counts, tips, "Open floor plan" and "Open in calculator".
 - **Milestones:** HUB tiers and Space Elevator phases with tick-off progress. "Plan" sends a cost straight to the calculator.
 - **Research:** all 96 MAM research items by tree, with costs, unlocks and tick-offs, plus a suggested order. "Plan" loads a research cost into the calculator.
 - **Machines & power:** overclock calculator, machine MW, belts/pipes, extractor rates, generators.
