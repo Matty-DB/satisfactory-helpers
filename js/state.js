@@ -6,6 +6,7 @@ const defaults = () => ({
   alts: [],
   choice: {},
   milestonesDone: [],
+  researchDone: [],
   targets: [{ item: 'Desc_IronPlateReinforced_C', rate: 5 }],
   theme: 'dark',
   view: 'list',
@@ -30,7 +31,7 @@ export function save() {
   }
 }
 
-const PORTABLE = ['tier', 'alts', 'choice', 'milestonesDone', 'targets'];
+const PORTABLE = ['tier', 'alts', 'choice', 'milestonesDone', 'researchDone', 'targets'];
 
 export function exportSettings() {
   return JSON.stringify(Object.fromEntries(PORTABLE.map((k) => [k, state[k]])));

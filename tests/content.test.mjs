@@ -14,3 +14,15 @@ test('every Space Elevator part exists as an item', () => {
   const missing = SPACE_ELEVATOR.flatMap((p) => p.cost.map(([n]) => n)).filter((n) => !names.has(n));
   assert.deepEqual(missing, []);
 });
+
+test('every research pick exists in that MAM tree', async () => {
+  const { RESEARCH_PICKS } = await import('../js/ref-content.js');
+  const have = new Set(DATA.research.map((r) => `${r.tree}|${r.n}`));
+  const missing = RESEARCH_PICKS.flatMap((s) => s.picks.map(([t, n]) => `${t}|${n}`)).filter((k) => !have.has(k));
+  assert.deepEqual(missing, []);
+});
+
+test('research cost items are all known items', () => {
+  const missing = DATA.research.flatMap((r) => r.cost.map(([id]) => id)).filter((id) => !DATA.items[id]);
+  assert.deepEqual(missing, []);
+});

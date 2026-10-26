@@ -2,7 +2,7 @@ import { DATA } from './data.js';
 import { makeIndex, solve, buildTree, recipeOptions, perMin, beltFor, BELTS, PIPES } from './calc.js';
 import { renderFlow, renderFloor } from './diagram.js';
 import { state, save, exportSettings, importSettings } from './state.js';
-import { BEST_ALTS, SPACE_ELEVATOR, EXTRACTORS, PS5_TIPS } from './ref-content.js';
+import { BEST_ALTS, SPACE_ELEVATOR, EXTRACTORS, PS5_TIPS, RESEARCH_PICKS } from './ref-content.js';
 
 const index = makeIndex(DATA);
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -39,7 +39,7 @@ $('#theme-toggle').addEventListener('click', () => {
 applyTheme();
 
 const rendered = {};
-const tabRenderers = { milestones: renderMilestones, machines: renderMachines, alts: renderBestAlts, tips: renderTips };
+const tabRenderers = { milestones: renderMilestones, research: renderResearch, machines: renderMachines, alts: renderBestAlts, tips: renderTips };
 function showTab(name) {
   for (const b of document.querySelectorAll('[role="tab"]')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const p of document.querySelectorAll('.panel')) p.hidden = p.id !== `tab-${name}`;
@@ -213,6 +213,7 @@ function renderSummary(res) {
     ${res.belt ? `<div class="stat"><div class="label">Busiest belt · ${fmt(res.belt.rate)}/min</div><div class="value">Mk.${res.belt.mk}${res.belt.lines > 1 ? ` ×${res.belt.lines}` : ''}</div></div>` : ''}
     ${res.pipe ? `<div class="stat"><div class="label">Busiest pipe · ${fmt(res.pipe.rate)} m³/min</div><div class="value">Mk.${res.pipe.mk}${res.pipe.lines > 1 ? ` ×${res.pipe.lines}` : ''}</div></div>` : ''}
     <div class="stat wide"><div class="label">Raw resources</div><ul>${list(res.raw) || '<li>None</li>'}</ul></div>`;
+  if (Object.keys(res.hand).length) html += `<div class="stat wide"><div class="label">Craft by hand (Equipment Workshop)</div><ul>${list(res.hand)}</ul></div>`;
   if (Object.keys(res.loopInputs).length) html += `<div class="stat wide"><div class="label">Loop inputs (supply from the loop's own output)</div><ul>${list(res.loopInputs)}</ul></div>`;
   if (Object.keys(res.byproducts).length) html += `<div class="stat wide"><div class="label">Byproducts — sink, store or use them elsewhere</div><ul>${list(res.byproducts)}</ul></div>`;
   return html;
@@ -408,6 +409,83 @@ $('#tab-milestones').addEventListener('click', (e) => {
   const b = e.target.closest('[data-plan]');
   if (!b) return;
   planCost(JSON.parse(b.dataset.plan), Number($('#plan-minutes').value) || 10);
+});
+
+// ---------- MAM research ----------
+const TREE_ORDER = ['Caterium', 'Power Slugs', 'Alien Technology', 'Quartz', 'Sulfur', 'Mycelia', 'Alien Megafauna', 'Nutrients'];
+const researchKey = (tree, n) => `${tree}|${n}`;
+const researchByKey = Object.fromEntries(DATA.research.map((r) => [researchKey(r.tree, r.n), r]));
+const pickWhy = Object.fromEntries(RESEARCH_PICKS.flatMap((s) => s.picks.map(([t, n, why]) => [researchKey(t, n), why])));
+
+function researchItem(r, why) {
+  const done = state.researchDone.includes(r.id);
+  const unlocks = [...r.unlocks, r.slots ? `+${r.slots} inventory slots` : ''].filter(Boolean);
+  return `<div class="milestone${done ? ' done' : ''}">
+    <div class="ms-top">
+      <label class="check-row"><input type="checkbox" data-research="${r.id}"${done ? ' checked' : ''}><span class="ms-name">${esc(r.n)}</span></label>
+      ${r.cost.length ? `<button type="button" class="btn" data-plan='${esc(JSON.stringify(r.cost))}'>Plan</button>` : ''}
+    </div>
+    ${why ? `<p class="ms-unlocks why">${esc(why)}</p>` : ''}
+    ${costChips(r.cost)}
+    ${unlocks.length ? `<p class="ms-unlocks">Unlocks: ${unlocks.map(esc).join(', ')}</p>` : ''}
+  </div>`;
+}
+
+function renderResearch() {
+  const panel = $('#tab-research');
+  const minutes = Number(panel.querySelector('#research-minutes')?.value) || 10;
+  const done = new Set(state.researchDone);
+  const picks = RESEARCH_PICKS.map((stage) => {
+    const list = stage.picks.map(([t, n]) => researchByKey[researchKey(t, n)]);
+    const left = list.filter((r) => !done.has(r.id)).length;
+    return `<details class="card tier-block"${left ? ' open' : ''}>
+      <summary><h2 style="display:inline-flex;width:calc(100% - 1.5rem)">${esc(stage.stage)} <span class="hint" style="margin:0">${list.length - left}/${list.length}</span>
+        <span class="progress"><span style="width:${((list.length - left) / list.length) * 100}%"></span></span></h2></summary>
+      ${list.map((r) => researchItem(r, `${r.tree} · ${pickWhy[researchKey(r.tree, r.n)]}`)).join('')}
+    </details>`;
+  }).join('');
+  const trees = {};
+  for (const r of DATA.research) (trees[r.tree] ||= []).push(r);
+  const treeHtml = TREE_ORDER.filter((t) => trees[t]).map((t) => {
+    const list = trees[t].slice().sort((a, b) => (pickWhy[researchKey(t, b.n)] ? 1 : 0) - (pickWhy[researchKey(t, a.n)] ? 1 : 0) || a.n.localeCompare(b.n));
+    const n = list.filter((r) => done.has(r.id)).length;
+    return `<details class="card tier-block">
+      <summary><h2 style="display:inline-flex;width:calc(100% - 1.5rem)">${esc(t)} <span class="hint" style="margin:0">${n}/${list.length}</span>
+        <span class="progress"><span style="width:${(n / list.length) * 100}%"></span></span></h2></summary>
+      ${list.map((r) => researchItem(r, pickWhy[researchKey(t, r.n)] ? `★ ${pickWhy[researchKey(t, r.n)]}` : '')).join('')}
+    </details>`;
+  }).join('');
+  panel.innerHTML = `<div class="ref-grid">
+    <div class="card">
+      <h2>MAM research</h2>
+      <p class="hint" style="margin-top:0">Build the MAM (Tier 1, Field Research), then research in roughly this order. Tick items off as you finish them.
+        "Plan" loads a research cost into the calculator, spread over
+        <input id="research-minutes" type="number" min="1" value="${minutes}" class="num" style="width:5rem;min-height:36px"> minutes of production.
+        Inside the MAM some research only appears after its neighbours, so do each tree roughly top to bottom.</p>
+      <p class="hint">Also research every <strong>Hard Drive</strong> you find. It offers a choice of alternate recipes, and the <em>Best alts</em> tab helps you pick.</p>
+    </div>
+    ${picks}
+    <h2 style="margin:.5rem 0 0">All research by tree</h2>
+    <p class="hint" style="margin:0">★ marks the suggested picks.</p>
+    ${treeHtml}
+  </div>`;
+}
+
+$('#tab-research').addEventListener('change', (e) => {
+  const id = e.target.dataset.research;
+  if (!id) return;
+  const set = new Set(state.researchDone);
+  if (e.target.checked) set.add(id); else set.delete(id);
+  state.researchDone = [...set];
+  save();
+  const open = [...document.querySelectorAll('#tab-research details')].map((d) => d.open);
+  renderResearch();
+  document.querySelectorAll('#tab-research details').forEach((d, i) => { if (open[i] !== undefined) d.open = open[i]; });
+});
+$('#tab-research').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-plan]');
+  if (!b) return;
+  planCost(JSON.parse(b.dataset.plan), Number($('#research-minutes').value) || 10);
 });
 
 // ---------- machines & power ----------

@@ -85,6 +85,7 @@ export function solve(index, targets, opts = {}) {
   const nodes = [];
   const raw = {};
   const unavailable = {};
+  const hand = {};
   const loopInputs = {};
   const byproducts = {};
   let power = 0;
@@ -94,7 +95,7 @@ export function solve(index, targets, opts = {}) {
     if (rate <= 1e-9) continue;
     const r = recipeOf[item];
     if (!r) {
-      (items[item]?.raw ? raw : unavailable)[item] = rate;
+      (items[item]?.raw ? raw : items[item]?.hand ? hand : unavailable)[item] = rate;
       continue;
     }
     const machines = rate / perMin(r, outAmount(r, item));
@@ -121,7 +122,7 @@ export function solve(index, targets, opts = {}) {
   }
 
   return {
-    nodes, raw, unavailable, loopInputs, byproducts, cycles, power, demand,
+    nodes, raw, hand, unavailable, loopInputs, byproducts, cycles, power, demand,
     belt: maxSolid ? { rate: maxSolid, ...beltFor(maxSolid, false) } : null,
     pipe: maxFluid ? { rate: maxFluid, ...beltFor(maxFluid, true) } : null,
   };

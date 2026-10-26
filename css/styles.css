@@ -173,6 +173,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px; }
 .cost { display: flex; flex-wrap: wrap; gap: .3rem; margin: .3rem 0 0 2rem; padding: 0; list-style: none; }
 .cost li { background: var(--surface-2); border-radius: 6px; padding: .15rem .5rem; font-size: .85rem; }
 .ms-unlocks { margin: .3rem 0 0 2rem; color: var(--muted); font-size: .8rem; }
+.ms-unlocks.why { color: var(--text); font-size: .88rem; }
 
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--border); }
