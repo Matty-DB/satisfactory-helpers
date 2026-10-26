@@ -1,8 +1,10 @@
 import { DATA } from './data.js';
 import { makeIndex, solve, buildTree, recipeOptions, perMin, beltFor, BELTS, PIPES } from './calc.js';
 import { renderFlow, renderFloor } from './diagram.js';
+import { powerPlan } from './power.js';
+import { buildInputs } from './builds.js';
 import { state, save, exportSettings, importSettings } from './state.js';
-import { BEST_ALTS, SPACE_ELEVATOR, EXTRACTORS, PS5_TIPS, RESEARCH_PICKS } from './ref-content.js';
+import { BEST_ALTS, SPACE_ELEVATOR, EXTRACTORS, PS5_TIPS, RESEARCH_PICKS, BUILDS } from './ref-content.js';
 
 const index = makeIndex(DATA);
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -25,6 +27,7 @@ tierSelect.addEventListener('change', () => {
   save();
   recalc();
   renderMilestones();
+  if (rendered.builds) renderBuilds();
 });
 
 function applyTheme() {
@@ -39,7 +42,7 @@ $('#theme-toggle').addEventListener('click', () => {
 applyTheme();
 
 const rendered = {};
-const tabRenderers = { milestones: renderMilestones, research: renderResearch, machines: renderMachines, alts: renderBestAlts, tips: renderTips };
+const tabRenderers = { builds: renderBuilds, milestones: renderMilestones, research: renderResearch, machines: renderMachines, alts: renderBestAlts, tips: renderTips };
 function showTab(name) {
   for (const b of document.querySelectorAll('[role="tab"]')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const p of document.querySelectorAll('.panel')) p.hidden = p.id !== `tab-${name}`;
@@ -411,6 +414,135 @@ $('#tab-milestones').addEventListener('click', (e) => {
   planCost(JSON.parse(b.dataset.plan), Number($('#plan-minutes').value) || 10);
 });
 
+// ---------- builds & power planner ----------
+const planner = { gen: 'Desc_GeneratorCoal_C', fuel: 'Desc_Coal_C', count: 8 };
+
+function powerSummary(p) {
+  const fluid = isFluid(p.fuelId);
+  const water = p.waterTotal ? beltFor(p.waterTotal, true) : null;
+  const rows = [
+    ['Power', p.extractorMW ? `${fmt(p.gross)} MW gross · ${fmt(p.net)} MW after water extractors` : `${fmt(p.gross)} MW`],
+    ['Fuel', `${fmt(p.fuelTotal)} ${fluid ? 'm³' : ''}/min ${esc(itemName(p.fuelId))} (${fmt(p.fuelPerGen)} each)`],
+  ];
+  if (p.waterTotal) {
+    rows.push(['Water', `${fmt(p.waterTotal)} m³/min → ${p.waterExtractors} Water Extractor${p.waterExtractors > 1 ? 's' : ''} (${p.extractorMW} MW) · pipe Mk.${water.mk}${water.lines > 1 ? ` ×${water.lines}` : ''}`]);
+  }
+  if (p.miners.length) {
+    rows.push(['Miners', p.miners.map((m) => `${m.count}× ${esc(m.n)}`).join(' or ') + ' on normal nodes']);
+  }
+  return `<table class="kv"><tbody>${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function renderPlanner() {
+  const gen = DATA.generators.find((g) => g.id === planner.gen);
+  if (!gen.fuels.some(([f]) => f === planner.fuel)) planner.fuel = gen.fuels[0][0];
+  const p = powerPlan(DATA, planner.gen, planner.fuel, planner.count);
+  const craftable = !DATA.items[planner.fuel]?.raw;
+  $('#planner-out').innerHTML = `${powerSummary(p)}
+    ${craftable ? `<button type="button" class="btn" id="planner-load">Plan ${fmt(p.fuelTotal)}/min ${esc(itemName(planner.fuel))} in calculator</button>` : ''}`;
+  $('#planner-fuel').innerHTML = gen.fuels.map(([f, mj]) => `<option value="${f}"${f === planner.fuel ? ' selected' : ''}>${esc(itemName(f))} (${mj.toLocaleString()} MJ)</option>`).join('');
+}
+
+function buildCard(b) {
+  const { targets, opts: bo, power } = buildInputs(DATA, b);
+  const parts = [];
+  if (power) parts.push(powerSummary(powerPlan(DATA, power.genId, power.fuelId, power.count)));
+  if (targets.length) {
+    const res = solve(index, targets, bo);
+    const byMachine = {};
+    for (const n of res.nodes) byMachine[n.recipe.m] = (byMachine[n.recipe.m] || 0) + Math.ceil(n.machines - 1e-9);
+    const raw = Object.entries(res.raw).map(([id, r]) => `${fmt(r)} ${esc(itemName(id))}`).join(', ');
+    const byp = Object.entries(res.byproducts).map(([id, r]) => `${fmt(r)} ${esc(itemName(id))}`).join(', ');
+    parts.push(`<table class="kv"><tbody>
+      <tr><th>Makes</th><td>${targets.map((t) => `${fmt(t.rate)} ${esc(itemName(t.item))}`).join(', ')} per min</td></tr>
+      <tr><th>Build</th><td>${Object.entries(byMachine).map(([m, c]) => `${c}× ${esc(machineName(m))}`).join(', ')}</td></tr>
+      <tr><th>Raw</th><td>${raw || '—'} per min</td></tr>
+      ${byp ? `<tr><th>Byproduct</th><td>${byp} per min</td></tr>` : ''}
+      <tr><th>Uses</th><td>${fmt(res.power)} MW at 100%</td></tr>
+    </tbody></table>`);
+  }
+  const altNote = b.alts?.length ? `<p class="notice" style="margin:.6rem 0 0">Uses ${b.alts.map(esc).join(' + ')} — tick ${b.alts.length > 1 ? 'them' : 'it'} under <em>Alt recipes</em> once unlocked.</p>` : '';
+  const locked = b.tier > state.tier ? ` <span class="tag">TIER ${b.tier}</span>` : ` <span class="hint" style="font-size:.8rem">Tier ${b.tier}</span>`;
+  return `<article class="card build" id="build-${b.id}">
+    <h3>${esc(b.title)}${locked}</h3>
+    <p>${esc(b.goal)}</p>
+    ${parts.join('')}
+    ${altNote}
+    <ul class="tips-list">${b.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+    <div class="target-actions">
+      ${targets.length ? `<button type="button" class="btn primary" data-build-calc="${b.id}">Open in calculator</button>` : ''}
+      ${power ? `<button type="button" class="btn" data-build-power="${b.id}">Open in power planner</button>` : ''}
+    </div>
+  </article>`;
+}
+
+function renderBuilds() {
+  const panel = $('#tab-builds');
+  const stages = BUILDS.map((st) => {
+    const tiers = st.builds.map((b) => b.tier);
+    const open = state.tier >= Math.min(...tiers) && state.tier <= Math.max(...tiers) + 2;
+    return `<details class="tier-block build-stage"${open ? ' open' : ''}>
+      <summary><h2 style="display:inline">${esc(st.stage)}</h2></summary>
+      <div class="build-grid">${st.builds.map(buildCard).join('')}</div>
+    </details>`;
+  }).join('');
+  panel.innerHTML = `<div class="ref-grid">
+    <div class="card" id="planner">
+      <h2>Power planner</h2>
+      <div class="planner-form">
+        <label>Generator<select id="planner-gen">${DATA.generators.map((g) => `<option value="${g.id}"${g.id === planner.gen ? ' selected' : ''}>${esc(g.n)} (${g.mw} MW)</option>`).join('')}</select></label>
+        <label>Fuel<select id="planner-fuel"></select></label>
+        <label>How many<input id="planner-count" type="number" min="1" step="1" value="${planner.count}" class="num"></label>
+      </div>
+      <div id="planner-out"></div>
+      <p class="hint">At 100% clock. Miner counts assume normal-purity nodes; halve them for pure nodes. Miners and pumps also draw power (see Machines &amp; power).</p>
+    </div>
+    <p class="hint" style="margin:0">Ready-made setups in the order you'll need them. Numbers use standard recipes; open one in the calculator to swap in your alternates or change the rate.</p>
+    ${stages}
+  </div>`;
+  renderPlanner();
+}
+
+$('#tab-builds').addEventListener('change', (e) => {
+  if (e.target.id === 'planner-gen') { planner.gen = e.target.value; renderPlanner(); }
+  if (e.target.id === 'planner-fuel') { planner.fuel = e.target.value; renderPlanner(); }
+});
+$('#tab-builds').addEventListener('input', (e) => {
+  if (e.target.id === 'planner-count') { planner.count = Math.max(1, Math.round(Number(e.target.value) || 1)); renderPlanner(); }
+});
+$('#tab-builds').addEventListener('click', (e) => {
+  const calcBtn = e.target.closest('[data-build-calc]');
+  const powerBtn = e.target.closest('[data-build-power]');
+  const find = (id) => BUILDS.flatMap((s) => s.builds).find((b) => b.id === id);
+  if (calcBtn) {
+    const { targets, opts: bo } = buildInputs(DATA, find(calcBtn.dataset.buildCalc));
+    state.targets = targets;
+    Object.assign(state.choice, bo.choice);
+    save();
+    renderTargets();
+    recalc();
+    showTab('calc');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else if (powerBtn) {
+    const { power } = buildInputs(DATA, find(powerBtn.dataset.buildPower));
+    planner.gen = power.genId;
+    planner.fuel = power.fuelId;
+    planner.count = power.count;
+    $('#planner-gen').value = power.genId;
+    $('#planner-count').value = power.count;
+    renderPlanner();
+    $('#planner').scrollIntoView({ behavior: 'smooth' });
+  } else if (e.target.id === 'planner-load') {
+    const p = powerPlan(DATA, planner.gen, planner.fuel, planner.count);
+    state.targets = [{ item: planner.fuel, rate: Math.round(p.fuelTotal * 100) / 100 }];
+    save();
+    renderTargets();
+    recalc();
+    showTab('calc');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+});
+
 // ---------- MAM research ----------
 const TREE_ORDER = ['Caterium', 'Power Slugs', 'Alien Technology', 'Quartz', 'Sulfur', 'Mycelia', 'Alien Megafauna', 'Nutrients'];
 const researchKey = (tree, n) => `${tree}|${n}`;
@@ -540,7 +672,7 @@ function renderMachines() {
       <h2>Power generators</h2>
       <div class="table-wrap"><table>
         <thead><tr><th>Generator</th><th class="num">MW</th><th>Fuel</th></tr></thead>
-        <tbody>${DATA.generators.map((g) => `<tr><td>${esc(g.n)}</td><td class="num">${g.mw}</td><td>${g.fuel.map(esc).join(', ')}</td></tr>`).join('')}</tbody>
+        <tbody>${DATA.generators.map((g) => `<tr><td>${esc(g.n)}</td><td class="num">${g.mw}</td><td>${g.fuels.map(([f]) => esc(itemName(f))).join(', ')}</td></tr>`).join('')}</tbody>
       </table></div>
     </div>
   </div>`;

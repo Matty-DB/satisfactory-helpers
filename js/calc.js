@@ -26,7 +26,8 @@ export function recipeOptions(index, item, opts) {
   const score = ({ r, main }) =>
     (main ? 0 : 100) + (NON_DEFAULT_MACHINES.has(r.m) ? 50 : 0) + (r.alt ? 10 : 0) + (r.n === name ? 0 : 1);
   return (index.producers[item] || [])
-    .filter(({ r }) => isAvailable(r, opts))
+    // Unpacking is never a real source: the packaged item is made from this one.
+    .filter(({ r }) => isAvailable(r, opts) && !r.n.startsWith('Unpackage '))
     .sort((a, b) => score(a) - score(b))
     .map(({ r }) => r);
 }

@@ -79,3 +79,9 @@ test('belt tiers', () => {
   assert.deepEqual(beltFor(2400, false), { mk: 6, lines: 2 });
   assert.deepEqual(beltFor(450, true), { mk: 2, lines: 1 });
 });
+
+test('Turbofuel without its recipe is unavailable, not an unpackaging loop', () => {
+  const res = solve(index, [{ item: 'Desc_LiquidTurboFuel_C', rate: 30 }]);
+  assert.equal(res.cycles.length, 0);
+  assert.ok(res.unavailable.Desc_LiquidTurboFuel_C);
+});
